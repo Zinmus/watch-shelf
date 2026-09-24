@@ -32,7 +32,7 @@ export interface MediaItem {
   date: string
 }
 
-interface PaginatedResponse<T> {
+export interface PaginatedResponse<T> {
   page: number
   results: T[]
   total_pages: number
@@ -63,32 +63,38 @@ async function request<T>(
   return response.json() as Promise<T>
 }
 
-export async function getMovies(page = 1): Promise<MediaItem[]> {
+export async function getMovies(page = 1): Promise<PaginatedResponse<MediaItem>> {
   const data = await request<PaginatedResponse<Movie>>('/discover/movie', {
     page,
   })
 
-  return data.results.map((movie) => ({
-    id: movie.id,
-    mediaType: 'movie',
-    title: movie.title,
-    overview: movie.overview,
-    posterPath: movie.poster_path,
-    date: movie.release_date,
-  }))
+  return {
+    ...data,
+    results: data.results.map((movie) => ({
+      id: movie.id,
+      mediaType: 'movie',
+      title: movie.title,
+      overview: movie.overview,
+      posterPath: movie.poster_path,
+      date: movie.release_date,
+    })),
+  }
 }
 
-export async function getTvShows(page = 1): Promise<MediaItem[]> {
+export async function getTvShows(page = 1): Promise<PaginatedResponse<MediaItem>> {
   const data = await request<PaginatedResponse<TvShow>>('/discover/tv', {
     page,
   })
 
-  return data.results.map((show) => ({
-    id: show.id,
-    mediaType: 'tv',
-    title: show.name,
-    overview: show.overview,
-    posterPath: show.poster_path,
-    date: show.first_air_date,
-  }))
+  return {
+    ...data,
+    results: data.results.map((show) => ({
+      id: show.id,
+      mediaType: 'tv',
+      title: show.name,
+      overview: show.overview,
+      posterPath: show.poster_path,
+      date: show.first_air_date,
+    })),
+  }
 }

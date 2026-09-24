@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import MediaCard from '@/components/MediaCard.vue'
 import { getMovies, getTvShows, type MediaItem, type MediaType } from '@/api/tmdb'
@@ -7,18 +7,41 @@ import { getMovies, getTvShows, type MediaItem, type MediaType } from '@/api/tmd
 const activeType = ref<MediaType>('movie')
 const items = ref<MediaItem[]>([])
 
-const loading = ref(true)
+const currentPage = ref(1)
+const hasMore = ref(true)
+
+const loading = ref(false)
 const error = ref<string | null>(null)
 
+const loadMoreTrigger = ref<HTMLElement | null>(null)
+
+const showScrollTop = ref(false)
+
+let observer: IntersectionObserver | null = null
+
 async function loadMedia() {
+  if (loading.value || !hasMore.value) {
+    return
+  }
+
   try {
     loading.value = true
     error.value = null
 
-    items.value = activeType.value === 'movie' ? await getMovies(1) : await getTvShows(1)
+    const data =
+      activeType.value === 'movie'
+        ? await getMovies(currentPage.value)
+        : await getTvShows(currentPage.value)
+
+    items.value.push(...data.results)
+
+    hasMore.value = data.page < data.total_pages
+
+    if (hasMore.value) {
+      currentPage.value++
+    }
   } catch (err) {
     console.error(err)
-
     error.value = 'Failed to load media.'
   } finally {
     loading.value = false
@@ -31,12 +54,59 @@ async function selectType(type: MediaType) {
   }
 
   activeType.value = type
+  items.value = []
+  currentPage.value = 1
+  hasMore.value = true
+  error.value = null
 
   await loadMedia()
 }
 
-onMounted(() => {
-  loadMedia()
+function setupObserver() {
+  if (!loadMoreTrigger.value) {
+    return
+  }
+
+  observer = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0]
+
+      if (entry?.isIntersecting) {
+        loadMedia()
+      }
+    },
+    {
+      rootMargin: '300px',
+    },
+  )
+
+  observer.observe(loadMoreTrigger.value)
+}
+
+function handleScroll() {
+  showScrollTop.value = window.scrollY > 600
+}
+
+function scrollToTop() {
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth',
+  })
+}
+
+onMounted(async () => {
+  window.addEventListener('scroll', handleScroll)
+
+  await loadMedia()
+  await nextTick()
+
+  setupObserver()
+})
+
+onBeforeUnmount(() => {
+  observer?.disconnect()
+
+  window.removeEventListener('scroll', handleScroll)
 })
 </script>
 
@@ -64,14 +134,34 @@ onMounted(() => {
       </button>
     </div>
 
-    <p v-if="loading">Loading...</p>
-
-    <p v-else-if="error" class="text-red-600">
+    <p v-if="error && items.length === 0" class="text-red-600">
       {{ error }}
     </p>
 
     <div v-else class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       <MediaCard v-for="item in items" :key="`${item.mediaType}-${item.id}`" :media="item" />
     </div>
+
+    <div ref="loadMoreTrigger" class="h-1" />
+
+    <p v-if="loading" class="py-6 text-center text-gray-500">Loading...</p>
+
+    <p v-else-if="error" class="py-6 text-center text-red-600">
+      {{ error }}
+    </p>
+
+    <p v-else-if="!hasMore && items.length > 0" class="py-6 text-center text-gray-500">
+      No more results.
+    </p>
+
+    <button
+      v-if="showScrollTop"
+      type="button"
+      aria-label="Scroll to top"
+      class="fixed right-6 bottom-6 flex h-11 w-11 items-center justify-center rounded-full bg-black text-xl text-white shadow-lg transition hover:scale-105"
+      @click="scrollToTop"
+    >
+      ↑
+    </button>
   </main>
 </template>
