@@ -2,7 +2,8 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import MediaCard from '@/components/MediaCard.vue'
-import { getMovies, getTvShows, type MediaItem, type MediaType } from '@/api/tmdb'
+import { getMovies, getTvShows } from '@/api/tmdb'
+import { type MediaItem, type MediaType } from '@/types/media'
 
 const activeType = ref<MediaType>('movie')
 const items = ref<MediaItem[]>([])

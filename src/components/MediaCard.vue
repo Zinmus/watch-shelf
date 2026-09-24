@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { MediaItem } from '@/api/tmdb'
+import type { MediaItem } from '@/types/media'
 
 defineProps<{
   media: MediaItem
