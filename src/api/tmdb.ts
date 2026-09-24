@@ -1,4 +1,11 @@
-import type { Genre, MediaDetails, MediaItem } from '@/types/media'
+import type {
+  DiscoverFilters,
+  DiscoverSort,
+  Genre,
+  MediaDetails,
+  MediaItem,
+  MediaType,
+} from '@/types/media'
 
 const BASE_URL = 'https://api.themoviedb.org/3'
 const ACCESS_TOKEN = import.meta.env.VITE_TMDB_ACCESS_TOKEN
@@ -12,6 +19,10 @@ interface PaginatedResponse<T> {
   results: T[]
   total_pages: number
   total_results: number
+}
+
+interface GenreListResponse {
+  genres: Genre[]
 }
 
 interface MovieResponse {
@@ -74,8 +85,10 @@ function normalizeMovie(movie: MovieResponse): MediaItem {
   return {
     id: movie.id,
     mediaType: 'movie',
+
     title: movie.title,
     overview: movie.overview,
+
     posterPath: movie.poster_path,
     date: movie.release_date,
   }
@@ -85,17 +98,76 @@ function normalizeTvShow(show: TvShowResponse): MediaItem {
   return {
     id: show.id,
     mediaType: 'tv',
+
     title: show.name,
     overview: show.overview,
+
     posterPath: show.poster_path,
     date: show.first_air_date,
   }
 }
 
-export async function getMovies(page = 1): Promise<PaginatedResponse<MediaItem>> {
-  const data = await request<PaginatedResponse<MovieResponse>>('/discover/movie', {
+function getSortValue(mediaType: MediaType, sort: DiscoverSort) {
+  if (sort === 'rating') {
+    return 'vote_average.desc'
+  }
+
+  if (sort === 'date') {
+    return mediaType === 'movie' ? 'primary_release_date.desc' : 'first_air_date.desc'
+  }
+
+  return 'popularity.desc'
+}
+
+function buildDiscoverParams(
+  mediaType: MediaType,
+  page: number,
+  filters: DiscoverFilters,
+): Record<string, string | number> {
+  const params: Record<string, string | number> = {
     page,
-  })
+    sort_by: getSortValue(mediaType, filters.sortBy),
+  }
+
+  if (filters.genreId) {
+    params.with_genres = filters.genreId
+  }
+
+  if (filters.year) {
+    if (mediaType === 'movie') {
+      params.primary_release_year = filters.year
+    } else {
+      params.first_air_date_year = filters.year
+    }
+  }
+
+  // Without this, "rating" can be dominated by
+  // titles that have a 10/10 from only a few votes.
+  if (filters.sortBy === 'rating') {
+    params['vote_count.gte'] = 200
+  }
+
+  return params
+}
+
+export async function getGenres(mediaType: MediaType): Promise<Genre[]> {
+  const endpoint = mediaType === 'movie' ? '/genre/movie/list' : '/genre/tv/list'
+
+  const data = await request<GenreListResponse>(endpoint)
+
+  return data.genres
+}
+
+export async function getMovies(
+  page = 1,
+  filters: DiscoverFilters = {
+    sortBy: 'popularity',
+  },
+): Promise<PaginatedResponse<MediaItem>> {
+  const data = await request<PaginatedResponse<MovieResponse>>(
+    '/discover/movie',
+    buildDiscoverParams('movie', page, filters),
+  )
 
   return {
     ...data,
@@ -103,10 +175,16 @@ export async function getMovies(page = 1): Promise<PaginatedResponse<MediaItem>>
   }
 }
 
-export async function getTvShows(page = 1): Promise<PaginatedResponse<MediaItem>> {
-  const data = await request<PaginatedResponse<TvShowResponse>>('/discover/tv', {
-    page,
-  })
+export async function getTvShows(
+  page = 1,
+  filters: DiscoverFilters = {
+    sortBy: 'popularity',
+  },
+): Promise<PaginatedResponse<MediaItem>> {
+  const data = await request<PaginatedResponse<TvShowResponse>>(
+    '/discover/tv',
+    buildDiscoverParams('tv', page, filters),
+  )
 
   return {
     ...data,
@@ -146,6 +224,7 @@ export async function getMovie(id: number): Promise<MediaDetails> {
 
   return {
     ...normalizeMovie(movie),
+
     backdropPath: movie.backdrop_path,
     status: movie.status,
     genres: movie.genres,
@@ -157,6 +236,7 @@ export async function getTvShow(id: number): Promise<MediaDetails> {
 
   return {
     ...normalizeTvShow(show),
+
     backdropPath: show.backdrop_path,
     status: show.status,
     genres: show.genres,
