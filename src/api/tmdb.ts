@@ -74,10 +74,8 @@ function normalizeMovie(movie: MovieResponse): MediaItem {
   return {
     id: movie.id,
     mediaType: 'movie',
-
     title: movie.title,
     overview: movie.overview,
-
     posterPath: movie.poster_path,
     date: movie.release_date,
   }
@@ -87,10 +85,8 @@ function normalizeTvShow(show: TvShowResponse): MediaItem {
   return {
     id: show.id,
     mediaType: 'tv',
-
     title: show.name,
     overview: show.overview,
-
     posterPath: show.poster_path,
     date: show.first_air_date,
   }
@@ -118,12 +114,38 @@ export async function getTvShows(page = 1): Promise<PaginatedResponse<MediaItem>
   }
 }
 
+export async function searchMovies(query: string, page = 1): Promise<PaginatedResponse<MediaItem>> {
+  const data = await request<PaginatedResponse<MovieResponse>>('/search/movie', {
+    query,
+    page,
+  })
+
+  return {
+    ...data,
+    results: data.results.map(normalizeMovie),
+  }
+}
+
+export async function searchTvShows(
+  query: string,
+  page = 1,
+): Promise<PaginatedResponse<MediaItem>> {
+  const data = await request<PaginatedResponse<TvShowResponse>>('/search/tv', {
+    query,
+    page,
+  })
+
+  return {
+    ...data,
+    results: data.results.map(normalizeTvShow),
+  }
+}
+
 export async function getMovie(id: number): Promise<MediaDetails> {
   const movie = await request<MovieDetailsResponse>(`/movie/${id}`)
 
   return {
     ...normalizeMovie(movie),
-
     backdropPath: movie.backdrop_path,
     status: movie.status,
     genres: movie.genres,
@@ -135,7 +157,6 @@ export async function getTvShow(id: number): Promise<MediaDetails> {
 
   return {
     ...normalizeTvShow(show),
-
     backdropPath: show.backdrop_path,
     status: show.status,
     genres: show.genres,
