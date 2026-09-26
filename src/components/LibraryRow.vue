@@ -14,12 +14,12 @@ const props = defineProps<{
 }>()
 
 const progressLabel = computed(() => {
-  if (props.entry.mediaType !== 'tv' || props.entry.status !== 'watching') {
+  if (props.entry.mediaType !== 'tv') {
     return null
   }
 
   if (props.progressUnavailable) {
-    return 'Progress unavailable'
+    return `${props.entry.watchedEpisodeCount ?? 0} watched`
   }
 
   if (props.totalEpisodeCount !== undefined && props.totalEpisodeCount > 0) {

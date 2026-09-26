@@ -287,14 +287,10 @@ onBeforeUnmount(() => {
             :entry="entry"
             :release-status="releaseStatuses.get(entry.key)"
             :total-episode-count="
-              entry.mediaType === 'tv' && entry.status === 'watching'
-                ? totalEpisodeCounts.get(entry.tmdbId)
-                : undefined
+              entry.mediaType === 'tv' ? totalEpisodeCounts.get(entry.tmdbId) : undefined
             "
             :progress-unavailable="
-              entry.mediaType === 'tv' &&
-              entry.status === 'watching' &&
-              failedMediaKeys.has(entry.key)
+              entry.mediaType === 'tv' && failedMediaKeys.has(entry.key)
             "
           />
         </div>
