@@ -29,6 +29,14 @@ See [Vite Configuration Reference](https://vite.dev/config/).
 npm install
 ```
 
+Copy the example environment file:
+
+```sh
+cp .env.example .env
+```
+
+Then add your TMDB API Read Access Token to `VITE_TMDB_ACCESS_TOKEN` in `.env`.
+
 ### Compile and Hot-Reload for Development
 
 ```sh
