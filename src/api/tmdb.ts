@@ -45,6 +45,11 @@ interface TvShowResponse {
   first_air_date: string
 }
 
+type TrendingResponse =
+  | (MovieResponse & { media_type: 'movie' })
+  | (TvShowResponse & { media_type: 'tv' })
+  | { media_type: 'person' }
+
 interface MovieDetailsResponse extends MovieResponse {
   backdrop_path: string | null
 
@@ -239,6 +244,29 @@ export async function getTvShows(
   return {
     ...data,
     results: data.results.map(normalizeTvShow),
+  }
+}
+
+export async function getTrending(page = 1): Promise<PaginatedResponse<MediaItem>> {
+  const data = await request<PaginatedResponse<TrendingResponse>>('/trending/all/week', {
+    page,
+  })
+
+  const results = data.results.flatMap((item) => {
+    if (item.media_type === 'movie') {
+      return [normalizeMovie(item)]
+    }
+
+    if (item.media_type === 'tv') {
+      return [normalizeTvShow(item)]
+    }
+
+    return []
+  })
+
+  return {
+    ...data,
+    results,
   }
 }
 

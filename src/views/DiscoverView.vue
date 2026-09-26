@@ -3,11 +3,20 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import MediaCard from '@/components/MediaCard.vue'
 
-import { getGenres, getMovies, getTvShows, searchMovies, searchTvShows } from '@/api/tmdb'
+import {
+  getGenres,
+  getMovies,
+  getTrending,
+  getTvShows,
+  searchMovies,
+  searchTvShows,
+} from '@/api/tmdb'
 
 import type { DiscoverFilters, DiscoverSort, Genre, MediaItem, MediaType } from '@/types/media'
 
-const activeType = ref<MediaType>('movie')
+type DiscoverTab = MediaType | 'trending'
+
+const activeType = ref<DiscoverTab>('movie')
 
 const items = ref<MediaItem[]>([])
 const genres = ref<Genre[]>([])
@@ -60,7 +69,9 @@ async function loadMedia() {
 
     let data
 
-    if (query) {
+    if (type === 'trending') {
+      data = await getTrending(page)
+    } else if (query) {
       data = type === 'movie' ? await searchMovies(query, page) : await searchTvShows(query, page)
     } else {
       data = type === 'movie' ? await getMovies(page, filters) : await getTvShows(page, filters)
@@ -111,6 +122,10 @@ async function resetAndLoad() {
 }
 
 async function loadGenres() {
+  if (activeType.value === 'trending') {
+    return
+  }
+
   try {
     genres.value = await getGenres(activeType.value)
   } catch (err) {
@@ -120,7 +135,7 @@ async function loadGenres() {
   }
 }
 
-async function selectType(type: MediaType) {
+async function selectType(type: DiscoverTab) {
   if (activeType.value === type) {
     return
   }
@@ -138,7 +153,9 @@ async function selectType(type: MediaType) {
     genreId: undefined,
   }
 
-  await loadGenres()
+  if (type !== 'trending') {
+    await loadGenres()
+  }
   await resetAndLoad()
 }
 
@@ -253,15 +270,22 @@ onBeforeUnmount(() => {
     <form class="mb-6 flex gap-2" @submit.prevent="submitSearch">
       <input
         v-model="searchInput"
+        :disabled="activeType === 'trending'"
         type="search"
         placeholder="Search..."
         class="min-w-0 flex-1 rounded-lg border border-gray-300 px-4 py-2 outline-none focus:border-black"
       />
 
-      <button type="submit" class="rounded-lg bg-black px-4 py-2 text-white">Search</button>
+      <button
+        type="submit"
+        :disabled="activeType === 'trending'"
+        class="rounded-lg bg-black px-4 py-2 text-white disabled:cursor-not-allowed"
+      >
+        Search
+      </button>
 
       <button
-        v-if="searchQuery"
+        v-if="searchQuery && activeType !== 'trending'"
         type="button"
         class="rounded-lg bg-gray-100 px-4 py-2 text-gray-700"
         @click="clearSearch"
@@ -273,6 +297,15 @@ onBeforeUnmount(() => {
     <!-- Media type -->
 
     <div class="mb-6 flex gap-2">
+      <button
+        type="button"
+        class="rounded-lg px-4 py-2"
+        :class="activeType === 'trending' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'"
+        @click="selectType('trending')"
+      >
+        Trending
+      </button>
+
       <button
         type="button"
         class="rounded-lg px-4 py-2"
@@ -297,7 +330,7 @@ onBeforeUnmount(() => {
     <form
       class="mb-8 grid gap-3 rounded-xl bg-gray-50 p-4 sm:grid-cols-2 lg:grid-cols-4"
       :class="{
-        'opacity-50': searchQuery,
+        'opacity-50': searchQuery || activeType === 'trending',
       }"
       @submit.prevent="applyFilters"
     >
@@ -306,7 +339,7 @@ onBeforeUnmount(() => {
 
         <select
           v-model="filterGenreId"
-          :disabled="Boolean(searchQuery)"
+          :disabled="Boolean(searchQuery) || activeType === 'trending'"
           class="rounded-lg border border-gray-300 bg-white px-3 py-2"
         >
           <option value="">All genres</option>
@@ -322,7 +355,7 @@ onBeforeUnmount(() => {
 
         <input
           v-model.number="filterYear"
-          :disabled="Boolean(searchQuery)"
+          :disabled="Boolean(searchQuery) || activeType === 'trending'"
           type="number"
           min="1900"
           max="2100"
@@ -336,7 +369,7 @@ onBeforeUnmount(() => {
 
         <select
           v-model="filterSort"
-          :disabled="Boolean(searchQuery)"
+          :disabled="Boolean(searchQuery) || activeType === 'trending'"
           class="rounded-lg border border-gray-300 bg-white px-3 py-2"
         >
           <option value="popularity">Popularity</option>
@@ -350,7 +383,7 @@ onBeforeUnmount(() => {
       <div class="flex items-end gap-2">
         <button
           type="submit"
-          :disabled="Boolean(searchQuery)"
+          :disabled="Boolean(searchQuery) || activeType === 'trending'"
           class="rounded-lg bg-black px-4 py-2 text-white disabled:cursor-not-allowed"
         >
           Apply
@@ -358,7 +391,7 @@ onBeforeUnmount(() => {
 
         <button
           type="button"
-          :disabled="Boolean(searchQuery)"
+          :disabled="Boolean(searchQuery) || activeType === 'trending'"
           class="rounded-lg bg-gray-200 px-4 py-2 text-gray-700 disabled:cursor-not-allowed"
           @click="resetFilters"
         >
@@ -367,7 +400,7 @@ onBeforeUnmount(() => {
       </div>
     </form>
 
-    <p v-if="searchQuery" class="mb-5 text-sm text-gray-500">
+    <p v-if="searchQuery && activeType !== 'trending'" class="mb-5 text-sm text-gray-500">
       Results for
       <strong class="text-gray-800"> "{{ searchQuery }}" </strong>
 
