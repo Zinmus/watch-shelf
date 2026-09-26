@@ -9,7 +9,6 @@ import type { ReleaseStatus } from '@/domain/releaseStatus'
 const props = defineProps<{
   entry: LibraryEntry
   releaseStatus?: ReleaseStatus
-  watchedEpisodeCount?: number
   totalEpisodeCount?: number
   progressUnavailable?: boolean
 }>()
@@ -23,15 +22,15 @@ const progressLabel = computed(() => {
     return 'Progress unavailable'
   }
 
-  if (props.watchedEpisodeCount === undefined) {
-    return 'Loading progress…'
-  }
-
   if (props.totalEpisodeCount !== undefined && props.totalEpisodeCount > 0) {
-    return `${props.watchedEpisodeCount} / ${props.totalEpisodeCount}`
+    return `${Math.min(props.entry.watchedEpisodeCount ?? 0, props.totalEpisodeCount)} / ${props.totalEpisodeCount}`
   }
 
-  return `${props.watchedEpisodeCount} watched`
+  if (props.totalEpisodeCount === 0) {
+    return '0 / 0'
+  }
+
+  return 'Loading progress…'
 })
 
 const releaseStatusClass = computed(() => {

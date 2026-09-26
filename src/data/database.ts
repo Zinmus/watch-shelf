@@ -1,10 +1,10 @@
 import type { MediaType } from '@/types/media'
 
 export const DATABASE_NAME = 'watch-shelf'
-export const DATABASE_VERSION = 2
+export const DATABASE_VERSION = 3
 export const LIBRARY_STORE = 'library'
-export const WATCHED_EPISODES_STORE = 'watchedEpisodes'
-export const WATCHED_EPISODES_SHOW_INDEX = 'showTmdbId'
+
+const LEGACY_WATCHED_EPISODES_STORE = 'watchedEpisodes'
 
 let databasePromise: Promise<IDBDatabase> | null = null
 
@@ -43,13 +43,6 @@ export function openDatabase(): Promise<IDBDatabase> {
         database.createObjectStore(LIBRARY_STORE, { keyPath: 'key' })
       }
 
-      if (!database.objectStoreNames.contains(WATCHED_EPISODES_STORE)) {
-        const watchedEpisodes = database.createObjectStore(WATCHED_EPISODES_STORE, {
-          keyPath: ['showTmdbId', 'seasonNumber', 'episodeNumber'],
-        })
-        watchedEpisodes.createIndex(WATCHED_EPISODES_SHOW_INDEX, 'showTmdbId')
-      }
-
       if (event.oldVersion === 1 && transaction) {
         const library = transaction.objectStore(LIBRARY_STORE)
         const cursorRequest = library.openCursor()
@@ -63,11 +56,77 @@ export function openDatabase(): Promise<IDBDatabase> {
 
           const entry = cursor.value as { mediaType?: string; status?: string }
 
-          if (entry.mediaType === 'tv' && entry.status === 'completed') {
-            cursor.update({ ...cursor.value, status: 'watching' })
+          if (entry.mediaType === 'tv') {
+            cursor.update({
+              ...cursor.value,
+              status: entry.status === 'completed' ? 'watching' : entry.status,
+              watchedEpisodeCount: 0,
+            })
           }
 
           cursor.continue()
+        }
+      }
+
+      if (
+        event.oldVersion === 2 &&
+        transaction &&
+        database.objectStoreNames.contains(LEGACY_WATCHED_EPISODES_STORE)
+      ) {
+        const watchedEpisodes = transaction.objectStore(LEGACY_WATCHED_EPISODES_STORE)
+        const watchedRequest = watchedEpisodes.getAll()
+
+        watchedRequest.onsuccess = () => {
+          const watchedCounts = new Map<number, number>()
+
+          for (const record of watchedRequest.result as Array<{
+            showTmdbId?: number
+            seasonNumber?: number
+          }>) {
+            if (
+              typeof record.showTmdbId === 'number' &&
+              typeof record.seasonNumber === 'number' &&
+              record.seasonNumber > 0
+            ) {
+              watchedCounts.set(
+                record.showTmdbId,
+                (watchedCounts.get(record.showTmdbId) ?? 0) + 1,
+              )
+            }
+          }
+
+          const library = transaction.objectStore(LIBRARY_STORE)
+          const cursorRequest = library.openCursor()
+
+          cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result
+
+            if (!cursor) {
+              database.deleteObjectStore(LEGACY_WATCHED_EPISODES_STORE)
+              return
+            }
+
+            const entry = cursor.value as {
+              mediaType?: string
+              status?: string
+              tmdbId?: number
+            }
+
+            if (entry.mediaType === 'tv' && typeof entry.tmdbId === 'number') {
+              const watchedEpisodeCount = watchedCounts.get(entry.tmdbId) ?? 0
+
+              cursor.update({
+                ...cursor.value,
+                status:
+                  entry.status === 'planned' && watchedEpisodeCount > 0
+                    ? 'watching'
+                    : entry.status,
+                watchedEpisodeCount,
+              })
+            }
+
+            cursor.continue()
+          }
         }
       }
     }

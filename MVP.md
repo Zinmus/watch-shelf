@@ -12,7 +12,7 @@
 - Title
 - Description
 - Release information
-- Seasons and episodes for TV series
+- Main episode totals for TV series
 
 ## Library
 
@@ -24,8 +24,8 @@ Statuses:
 
 ## Progress
 
-- Mark individual episodes as watched
-- Show watched / released episode progress
+- Track sequential watched episode count
+- Show watched / total main episode progress
 
 ## Library controls
 

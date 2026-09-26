@@ -1,86 +1,51 @@
-import type { WatchedEpisode } from '@/types/episodes'
-import type { TvShowDetails } from '@/types/media'
-import type { TvEpisode, TvSeasonDetails } from '@/types/tv'
+import type { LibraryStatus } from '@/types/library'
+import type { TvSeasonSummary } from '@/types/tv'
 
-export interface TvProgress {
-  totalMainEpisodeCount: number
-  releasedMainEpisodeCount: number
-  watchedReleasedEpisodeCount: number
-  allMainEpisodesWatched: boolean
-  canComplete: boolean
+export function getTotalMainEpisodeCount(seasons: TvSeasonSummary[]) {
+  return seasons
+    .filter((season) => season.seasonNumber > 0)
+    .reduce((total, season) => total + season.episodeCount, 0)
 }
 
-export function getEpisodeIdentity(seasonNumber: number, episodeNumber: number) {
-  return `${seasonNumber}:${episodeNumber}`
-}
+export function clampWatchedEpisodeCount(value: number, totalEpisodeCount: number) {
+  const normalizedTotal = Math.max(0, Math.trunc(totalEpisodeCount))
+  const normalizedValue = Number.isFinite(value) ? Math.trunc(value) : 0
 
-export function getLocalDateString(date = new Date()) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-
-  return `${year}-${month}-${day}`
-}
-
-export function isEpisodeReleased(episode: TvEpisode, today = getLocalDateString()) {
-  return Boolean(episode.airDate && /^\d{4}-\d{2}-\d{2}$/.test(episode.airDate) && episode.airDate <= today)
+  return Math.min(Math.max(normalizedValue, 0), normalizedTotal)
 }
 
 export function isFinishedTvShow(status: string) {
   return status === 'Ended' || status === 'Canceled'
 }
 
-export function deriveTvProgress(
-  show: TvShowDetails,
-  seasons: TvSeasonDetails[],
-  watchedEpisodes: WatchedEpisode[],
-  mainSeasonDetailsComplete: boolean,
-  today = getLocalDateString(),
-): TvProgress {
-  const totalMainEpisodeCount = show.seasons
-    .filter((season) => season.seasonNumber > 0)
-    .reduce((total, season) => total + season.episodeCount, 0)
-  const mainEpisodesByIdentity = new Map<string, TvEpisode>()
-
-  seasons.forEach((season) => {
-    if (season.seasonNumber <= 0) {
-      return
-    }
-
-    season.episodes.forEach((episode) => {
-      if (episode.episodeNumber > 0) {
-        mainEpisodesByIdentity.set(
-          getEpisodeIdentity(episode.seasonNumber, episode.episodeNumber),
-          episode,
-        )
-      }
-    })
-  })
-
-  const watchedIdentities = new Set(
-    watchedEpisodes
-      .filter((episode) => episode.seasonNumber > 0)
-      .map((episode) => getEpisodeIdentity(episode.seasonNumber, episode.episodeNumber)),
+export function canCompleteTvShow(
+  releaseStatus: string,
+  watchedEpisodeCount: number,
+  totalEpisodeCount: number,
+) {
+  return (
+    isFinishedTvShow(releaseStatus) &&
+    totalEpisodeCount > 0 &&
+    watchedEpisodeCount === totalEpisodeCount
   )
-  const mainEpisodes = [...mainEpisodesByIdentity.values()]
-  const releasedEpisodes = mainEpisodes.filter((episode) => isEpisodeReleased(episode, today))
-  const watchedReleasedEpisodeCount = releasedEpisodes.filter((episode) =>
-    watchedIdentities.has(getEpisodeIdentity(episode.seasonNumber, episode.episodeNumber)),
-  ).length
-  const episodeDetailsMatchSummary = mainEpisodes.length === totalMainEpisodeCount
-  const allMainEpisodesWatched =
-    mainSeasonDetailsComplete &&
-    totalMainEpisodeCount > 0 &&
-    episodeDetailsMatchSummary &&
-    mainEpisodes.every((episode) =>
-      watchedIdentities.has(getEpisodeIdentity(episode.seasonNumber, episode.episodeNumber)),
-    )
+}
 
-  return {
-    totalMainEpisodeCount,
-    releasedMainEpisodeCount: releasedEpisodes.length,
-    watchedReleasedEpisodeCount,
-    allMainEpisodesWatched,
-    canComplete: isFinishedTvShow(show.status) && allMainEpisodesWatched,
+export function getStatusAfterTvProgressChange(
+  currentStatus: LibraryStatus,
+  releaseStatus: string,
+  watchedEpisodeCount: number,
+  totalEpisodeCount: number,
+): LibraryStatus {
+  if (canCompleteTvShow(releaseStatus, watchedEpisodeCount, totalEpisodeCount)) {
+    return 'completed'
   }
+
+  if (
+    currentStatus === 'completed' ||
+    (currentStatus === 'planned' && watchedEpisodeCount > 0)
+  ) {
+    return 'watching'
+  }
+
+  return currentStatus
 }

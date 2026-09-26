@@ -5,11 +5,10 @@ import LibraryRow from '@/components/LibraryRow.vue'
 
 import { getMovie, getTvShow } from '@/api/tmdb'
 import { getLibraryEntries } from '@/data/library'
-import { getAllWatchedEpisodes } from '@/data/watchedEpisodes'
 import { normalizeReleaseStatus } from '@/domain/releaseStatus'
+import { getTotalMainEpisodeCount } from '@/domain/tvProgress'
 
 import type { ReleaseStatus } from '@/domain/releaseStatus'
-import type { WatchedEpisode } from '@/types/episodes'
 import type { LibraryEntry, LibraryStatus } from '@/types/library'
 import type { MediaType } from '@/types/media'
 
@@ -51,11 +50,9 @@ const MAX_DETAILS_REQUESTS = 3
 const activeType = ref<MediaFilter>('all')
 const sortOrder = ref<SortOrder>('title')
 const entries = ref<LibraryEntry[]>([])
-const watchedCounts = ref(new Map<number, number>())
 const totalEpisodeCounts = ref(new Map<number, number>())
 const releaseStatuses = ref(new Map<string, ReleaseStatus>())
-const watchedEpisodesLoaded = ref(false)
-const watchedEpisodesFailed = ref(false)
+const failedMediaKeys = ref(new Set<string>())
 const loading = ref(true)
 const error = ref<string | null>(null)
 
@@ -97,20 +94,6 @@ const mediaRequests = computed<MediaRequest[]>(() =>
   })),
 )
 
-function groupWatchedEpisodes(watchedEpisodes: WatchedEpisode[]) {
-  const counts = new Map<number, number>()
-
-  watchedEpisodes.forEach((episode) => {
-    if (episode.seasonNumber <= 0) {
-      return
-    }
-
-    counts.set(episode.showTmdbId, (counts.get(episode.showTmdbId) ?? 0) + 1)
-  })
-
-  watchedCounts.value = counts
-}
-
 function setTotalEpisodeCount(tmdbId: number, count: number) {
   const nextCounts = new Map(totalEpisodeCounts.value)
   nextCounts.set(tmdbId, count)
@@ -123,19 +106,6 @@ function setReleaseStatus(key: string, status: ReleaseStatus) {
   releaseStatuses.value = nextStatuses
 }
 
-function getWatchedEpisodeCount(entry: LibraryEntry) {
-  if (
-    entry.mediaType !== 'tv' ||
-    entry.status !== 'watching' ||
-    !watchedEpisodesLoaded.value ||
-    watchedEpisodesFailed.value
-  ) {
-    return undefined
-  }
-
-  return watchedCounts.value.get(entry.tmdbId) ?? 0
-}
-
 function fetchMediaEnrichment(request: MediaRequest): Promise<MediaEnrichment> {
   if (request.mediaType === 'movie') {
     return getMovie(request.tmdbId).then((movie) => ({
@@ -145,9 +115,7 @@ function fetchMediaEnrichment(request: MediaRequest): Promise<MediaEnrichment> {
 
   return getTvShow(request.tmdbId).then((show) => ({
     releaseStatus: normalizeReleaseStatus('tv', show.status),
-    totalEpisodeCount: show.seasons
-      .filter((season) => season.seasonNumber > 0)
-      .reduce((total, season) => total + season.episodeCount, 0),
+    totalEpisodeCount: getTotalMainEpisodeCount(show.seasons),
   }))
 }
 
@@ -189,6 +157,9 @@ function drainDetailsRequestQueue() {
       })
       .catch((cause: unknown) => {
         console.error(cause)
+        const nextFailedKeys = new Set(failedMediaKeys.value)
+        nextFailedKeys.add(mediaRequest.key)
+        failedMediaKeys.value = nextFailedKeys
       })
       .finally(() => {
         activeDetailsRequests -= 1
@@ -213,13 +184,7 @@ function queueMediaDetails() {
 async function loadLibrary() {
   loading.value = true
   error.value = null
-  watchedEpisodesLoaded.value = false
-  watchedEpisodesFailed.value = false
-  watchedCounts.value = new Map()
-
-  const watchedEpisodesPromise = getAllWatchedEpisodes()
-    .then((watchedEpisodes) => ({ watchedEpisodes, cause: null }))
-    .catch((cause: unknown) => ({ watchedEpisodes: null, cause }))
+  failedMediaKeys.value = new Set()
 
   try {
     entries.value = await getLibraryEntries()
@@ -232,21 +197,6 @@ async function loadLibrary() {
 
   loading.value = false
   queueMediaDetails()
-
-  const watchedResult = await watchedEpisodesPromise
-
-  if (!mounted) {
-    return
-  }
-
-  if (watchedResult.watchedEpisodes) {
-    groupWatchedEpisodes(watchedResult.watchedEpisodes)
-  } else {
-    console.error(watchedResult.cause)
-    watchedEpisodesFailed.value = true
-  }
-
-  watchedEpisodesLoaded.value = true
 }
 
 function resetMediaFilter() {
@@ -336,14 +286,15 @@ onBeforeUnmount(() => {
             :key="entry.key"
             :entry="entry"
             :release-status="releaseStatuses.get(entry.key)"
-            :watched-episode-count="getWatchedEpisodeCount(entry)"
             :total-episode-count="
               entry.mediaType === 'tv' && entry.status === 'watching'
                 ? totalEpisodeCounts.get(entry.tmdbId)
                 : undefined
             "
             :progress-unavailable="
-              entry.mediaType === 'tv' && entry.status === 'watching' && watchedEpisodesFailed
+              entry.mediaType === 'tv' &&
+              entry.status === 'watching' &&
+              failedMediaKeys.has(entry.key)
             "
           />
         </div>

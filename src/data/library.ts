@@ -7,8 +7,6 @@ import {
   openDatabase,
   requestToPromise,
   transactionToPromise,
-  WATCHED_EPISODES_SHOW_INDEX,
-  WATCHED_EPISODES_STORE,
 } from '@/data/database'
 
 export async function getLibraryEntry(
@@ -47,6 +45,12 @@ export async function saveLibraryEntry(
     ...input,
     key,
     status,
+    ...(input.mediaType === 'tv'
+      ? {
+          watchedEpisodeCount:
+            status === 'planned' ? 0 : (existingEntry?.watchedEpisodeCount ?? 0),
+        }
+      : {}),
     addedAt: existingEntry?.addedAt ?? now,
     updatedAt: now,
   }
@@ -57,23 +61,46 @@ export async function saveLibraryEntry(
   return entry
 }
 
+export async function updateTvLibraryState(
+  tmdbId: number,
+  status: LibraryStatus,
+  watchedEpisodeCount: number,
+): Promise<LibraryEntry> {
+  const database = await openDatabase()
+  const transaction = database.transaction(LIBRARY_STORE, 'readwrite')
+  const transactionComplete = transactionToPromise(transaction)
+  const store = transaction.objectStore(LIBRARY_STORE)
+  const key = createLibraryEntryKey('tv', tmdbId)
+  const existingEntry = await requestToPromise<LibraryEntry | undefined>(store.get(key))
+
+  if (!existingEntry || existingEntry.mediaType !== 'tv') {
+    transaction.abort()
+    await transactionComplete.catch(() => undefined)
+    throw new Error('TV library entry not found.')
+  }
+
+  const normalizedCount = Number.isFinite(watchedEpisodeCount)
+    ? Math.max(0, Math.trunc(watchedEpisodeCount))
+    : 0
+  const entry: LibraryEntry = {
+    ...existingEntry,
+    status,
+    watchedEpisodeCount: status === 'planned' ? 0 : normalizedCount,
+    updatedAt: new Date().toISOString(),
+  }
+
+  store.put(entry)
+  await transactionComplete
+
+  return entry
+}
+
 export async function removeLibraryEntry(mediaType: MediaType, tmdbId: number): Promise<void> {
   const database = await openDatabase()
-  const storeNames =
-    mediaType === 'tv' ? [LIBRARY_STORE, WATCHED_EPISODES_STORE] : [LIBRARY_STORE]
-  const transaction = database.transaction(storeNames, 'readwrite')
+  const transaction = database.transaction(LIBRARY_STORE, 'readwrite')
   const transactionComplete = transactionToPromise(transaction)
 
   transaction.objectStore(LIBRARY_STORE).delete(createLibraryEntryKey(mediaType, tmdbId))
-
-  if (mediaType === 'tv') {
-    const watchedEpisodes = transaction.objectStore(WATCHED_EPISODES_STORE)
-    const watchedKeys = await requestToPromise(
-      watchedEpisodes.index(WATCHED_EPISODES_SHOW_INDEX).getAllKeys(tmdbId),
-    )
-
-    watchedKeys.forEach((key) => watchedEpisodes.delete(key))
-  }
 
   await transactionComplete
 }

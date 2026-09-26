@@ -7,7 +7,7 @@ import type {
   MovieDetails,
   TvShowDetails,
 } from '@/types/media'
-import type { TvEpisode, TvSeasonDetails, TvSeasonSummary } from '@/types/tv'
+import type { TvSeasonSummary } from '@/types/tv'
 
 const BASE_URL = 'https://api.themoviedb.org/3'
 const ACCESS_TOKEN = import.meta.env.VITE_TMDB_ACCESS_TOKEN
@@ -73,23 +73,6 @@ interface TvSeasonSummaryResponse {
   season_number: number
 }
 
-interface TvEpisodeResponse {
-  id: number
-  name: string
-  overview: string
-  air_date: string | null
-  episode_number: number
-  season_number: number
-  still_path: string | null
-}
-
-interface TvSeasonDetailsResponse {
-  id: number
-  name: string
-  season_number: number
-  episodes: TvEpisodeResponse[]
-}
-
 async function request<T>(
   endpoint: string,
   params: Record<string, string | number> = {},
@@ -147,18 +130,6 @@ function normalizeTvSeasonSummary(season: TvSeasonSummaryResponse): TvSeasonSumm
     airDate: season.air_date,
     episodeCount: season.episode_count,
     seasonNumber: season.season_number,
-  }
-}
-
-function normalizeTvEpisode(episode: TvEpisodeResponse): TvEpisode {
-  return {
-    id: episode.id,
-    name: episode.name,
-    overview: episode.overview,
-    airDate: episode.air_date,
-    episodeNumber: episode.episode_number,
-    seasonNumber: episode.season_number,
-    stillPath: episode.still_path,
   }
 }
 
@@ -321,21 +292,5 @@ export async function getTvShow(id: number): Promise<TvShowDetails> {
     status: show.status,
     genres: show.genres,
     seasons: show.seasons.map(normalizeTvSeasonSummary),
-  }
-}
-
-export async function getTvSeason(
-  showId: number,
-  seasonNumber: number,
-): Promise<TvSeasonDetails> {
-  const season = await request<TvSeasonDetailsResponse>(
-    `/tv/${showId}/season/${seasonNumber}`,
-  )
-
-  return {
-    id: season.id,
-    name: season.name,
-    seasonNumber: season.season_number,
-    episodes: season.episodes.map(normalizeTvEpisode),
   }
 }

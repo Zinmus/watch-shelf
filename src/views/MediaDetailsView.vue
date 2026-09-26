@@ -1,14 +1,27 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import TvEpisodeProgress from '@/components/TvEpisodeProgress.vue'
+import TvProgressControl from '@/components/TvProgressControl.vue'
 
 import { getMovie, getTvShow } from '@/api/tmdb'
-import { getLibraryEntry, removeLibraryEntry, saveLibraryEntry } from '@/data/library'
+import {
+  getLibraryEntry,
+  removeLibraryEntry,
+  saveLibraryEntry,
+  updateTvLibraryState,
+} from '@/data/library'
+import {
+  canCompleteTvShow,
+  clampWatchedEpisodeCount,
+  getStatusAfterTvProgressChange,
+  getTotalMainEpisodeCount,
+} from '@/domain/tvProgress'
 
-import { type LibraryEntry, type LibraryStatus } from '@/types/library'
-import { type MediaDetails, type MediaType } from '@/types/media'
+import type { LibraryEntry, LibraryStatus } from '@/types/library'
+import type { MediaDetails, MediaType } from '@/types/media'
+
+type StatusSelection = LibraryStatus | 'not-in-library'
 
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500'
 const BACKDROP_BASE_URL = 'https://image.tmdb.org/t/p/w1280'
@@ -17,20 +30,36 @@ const route = useRoute()
 
 const media = ref<MediaDetails | null>(null)
 const libraryEntry = ref<LibraryEntry | null>(null)
-const selectedStatus = ref<LibraryStatus | ''>('')
+const selectedStatus = ref<StatusSelection>('not-in-library')
 const loading = ref(false)
 const libraryLoading = ref(false)
 const savingLibrary = ref(false)
 const error = ref<string | null>(null)
 const libraryError = ref<string | null>(null)
 const libraryNotice = ref<string | null>(null)
-const tvCompletionState = ref({ ready: false, canComplete: false })
 
-const STATUS_OPTIONS: { value: LibraryStatus; label: string }[] = [
+const STATUS_OPTIONS: { value: StatusSelection; label: string }[] = [
+  { value: 'not-in-library', label: 'Not in library' },
   { value: 'planned', label: 'Planned' },
   { value: 'watching', label: 'Watching' },
   { value: 'completed', label: 'Completed' },
 ]
+
+const totalMainEpisodeCount = computed(() =>
+  media.value?.mediaType === 'tv' ? getTotalMainEpisodeCount(media.value.seasons) : 0,
+)
+
+const watchedEpisodeCount = computed(() => libraryEntry.value?.watchedEpisodeCount ?? 0)
+
+const tvCanComplete = computed(
+  () =>
+    media.value?.mediaType === 'tv' &&
+    canCompleteTvShow(
+      media.value.status,
+      watchedEpisodeCount.value,
+      totalMainEpisodeCount.value,
+    ),
+)
 
 let loadVersion = 0
 
@@ -42,6 +71,74 @@ function getYear(date: string) {
   return date ? date.slice(0, 4) : 'Unknown'
 }
 
+function getEntryStatus(): StatusSelection {
+  return libraryEntry.value?.status ?? 'not-in-library'
+}
+
+function getLibraryEntryInput() {
+  if (!media.value) {
+    throw new Error('Media details are unavailable.')
+  }
+
+  return {
+    tmdbId: media.value.id,
+    mediaType: media.value.mediaType,
+    title: media.value.title,
+    posterPath: media.value.posterPath,
+    date: media.value.date,
+  }
+}
+
+async function reconcileTvState(version: number) {
+  if (media.value?.mediaType !== 'tv' || libraryEntry.value?.mediaType !== 'tv') {
+    return
+  }
+
+  const normalizedCount = clampWatchedEpisodeCount(
+    watchedEpisodeCount.value,
+    totalMainEpisodeCount.value,
+  )
+  const normalizedStatus = getStatusAfterTvProgressChange(
+    libraryEntry.value.status,
+    media.value.status,
+    normalizedCount,
+    totalMainEpisodeCount.value,
+  )
+
+  if (
+    normalizedCount === watchedEpisodeCount.value &&
+    normalizedStatus === libraryEntry.value.status
+  ) {
+    return
+  }
+
+  try {
+    savingLibrary.value = true
+    const updatedEntry = await updateTvLibraryState(
+      media.value.id,
+      normalizedStatus,
+      normalizedCount,
+    )
+
+    if (version !== loadVersion) {
+      return
+    }
+
+    libraryEntry.value = updatedEntry
+    selectedStatus.value = normalizedStatus
+    libraryNotice.value = 'Progress and status were updated to match current series data.'
+  } catch (cause) {
+    if (version === loadVersion) {
+      console.error(cause)
+      libraryError.value = 'Failed to reconcile this title\'s library state.'
+    }
+  } finally {
+    if (version === loadVersion) {
+      savingLibrary.value = false
+    }
+  }
+}
+
 async function loadMedia() {
   const version = ++loadVersion
   const type = String(route.params.type)
@@ -49,13 +146,13 @@ async function loadMedia() {
 
   media.value = null
   libraryEntry.value = null
-  selectedStatus.value = ''
+  selectedStatus.value = 'not-in-library'
   error.value = null
   libraryError.value = null
   libraryNotice.value = null
-  tvCompletionState.value = { ready: false, canComplete: false }
   loading.value = false
   libraryLoading.value = false
+  savingLibrary.value = false
 
   if (!isMediaType(type) || !Number.isFinite(id)) {
     error.value = 'Invalid media URL.'
@@ -85,7 +182,7 @@ async function loadMedia() {
 
   if (libraryResult.status === 'fulfilled') {
     libraryEntry.value = libraryResult.value ?? null
-    selectedStatus.value = libraryResult.value?.status ?? ''
+    selectedStatus.value = libraryResult.value?.status ?? 'not-in-library'
   } else {
     console.error(libraryResult.reason)
     libraryError.value = 'Failed to load this title\'s library state.'
@@ -93,20 +190,53 @@ async function loadMedia() {
 
   loading.value = false
   libraryLoading.value = false
+
+  if (detailsResult.status === 'fulfilled' && libraryResult.status === 'fulfilled') {
+    await reconcileTvState(version)
+  }
 }
 
-async function persistSelectedStatus() {
-  if (!media.value || !selectedStatus.value) {
+async function handleStatusChange() {
+  if (!media.value) {
     return
   }
 
+  const previousStatus = getEntryStatus()
+  const nextStatus = selectedStatus.value
+
+  if (nextStatus === previousStatus) {
+    return
+  }
+
+  if (nextStatus === 'not-in-library') {
+    if (!libraryEntry.value) {
+      return
+    }
+
+    if (
+      media.value.mediaType === 'tv' &&
+      watchedEpisodeCount.value > 0 &&
+      !window.confirm('Remove this title and delete its episode progress?')
+    ) {
+      selectedStatus.value = previousStatus
+      return
+    }
+  }
+
   if (
+    nextStatus === 'planned' &&
     media.value.mediaType === 'tv' &&
-    selectedStatus.value === 'completed' &&
-    (!tvCompletionState.value.ready || !tvCompletionState.value.canComplete)
+    watchedEpisodeCount.value > 0 &&
+    !window.confirm('Changing to Planned will reset episode progress to 0. Continue?')
   ) {
+    selectedStatus.value = previousStatus
+    return
+  }
+
+  if (nextStatus === 'completed' && media.value.mediaType === 'tv' && !tvCanComplete.value) {
     libraryError.value =
       'A series can only be completed after it has ended and all main episodes are watched.'
+    selectedStatus.value = previousStatus
     return
   }
 
@@ -115,84 +245,64 @@ async function persistSelectedStatus() {
     libraryError.value = null
     libraryNotice.value = null
 
-    libraryEntry.value = await saveLibraryEntry(
-      {
-        tmdbId: media.value.id,
-        mediaType: media.value.mediaType,
-        title: media.value.title,
-        posterPath: media.value.posterPath,
-        date: media.value.date,
-      },
-      selectedStatus.value,
-    )
-  } catch (err) {
-    console.error(err)
-    libraryError.value = 'Failed to save this title to your library.'
+    if (nextStatus === 'not-in-library') {
+      await removeLibraryEntry(media.value.mediaType, media.value.id)
+      libraryEntry.value = null
+      return
+    }
+
+    if (media.value.mediaType === 'tv' && libraryEntry.value) {
+      const nextCount = nextStatus === 'planned' ? 0 : watchedEpisodeCount.value
+      libraryEntry.value = await updateTvLibraryState(
+        media.value.id,
+        nextStatus,
+        nextCount,
+      )
+    } else {
+      libraryEntry.value = await saveLibraryEntry(getLibraryEntryInput(), nextStatus)
+    }
+
+    selectedStatus.value = libraryEntry.value.status
+  } catch (cause) {
+    console.error(cause)
+    libraryError.value = 'Failed to update this title\'s library state.'
+    selectedStatus.value = previousStatus
   } finally {
     savingLibrary.value = false
   }
 }
 
-async function removeFromLibrary() {
-  if (!media.value || !libraryEntry.value) {
+async function updateProgress(requestedCount: number) {
+  if (media.value?.mediaType !== 'tv' || libraryEntry.value?.mediaType !== 'tv') {
+    return
+  }
+
+  const nextCount = clampWatchedEpisodeCount(requestedCount, totalMainEpisodeCount.value)
+  const previousStatus = libraryEntry.value.status
+  const nextStatus = getStatusAfterTvProgressChange(
+    previousStatus,
+    media.value.status,
+    nextCount,
+    totalMainEpisodeCount.value,
+  )
+
+  if (nextCount === watchedEpisodeCount.value && nextStatus === previousStatus) {
     return
   }
 
   try {
     savingLibrary.value = true
     libraryError.value = null
-
-    await removeLibraryEntry(media.value.mediaType, media.value.id)
-
-    libraryEntry.value = null
-    selectedStatus.value = ''
     libraryNotice.value = null
-  } catch (err) {
-    console.error(err)
-    libraryError.value = 'Failed to remove this title from your library.'
-  } finally {
-    savingLibrary.value = false
-  }
-}
+    libraryEntry.value = await updateTvLibraryState(media.value.id, nextStatus, nextCount)
+    selectedStatus.value = nextStatus
 
-function handleLibraryEntryUpdated(entry: LibraryEntry) {
-  libraryEntry.value = entry
-  selectedStatus.value = entry.status
-  libraryNotice.value = 'Status changed to watching because an episode was marked unwatched.'
-}
-
-async function handleCompletionState(state: { ready: boolean; canComplete: boolean }) {
-  tvCompletionState.value = state
-
-  if (
-    !state.ready ||
-    state.canComplete ||
-    media.value?.mediaType !== 'tv' ||
-    libraryEntry.value?.status !== 'completed' ||
-    savingLibrary.value
-  ) {
-    return
-  }
-
-  try {
-    savingLibrary.value = true
-    libraryError.value = null
-    libraryEntry.value = await saveLibraryEntry(
-      {
-        tmdbId: media.value.id,
-        mediaType: media.value.mediaType,
-        title: media.value.title,
-        posterPath: media.value.posterPath,
-        date: media.value.date,
-      },
-      'watching',
-    )
-    selectedStatus.value = 'watching'
-    libraryNotice.value =
-      'Status changed to watching because this series no longer meets the completion rules.'
-  } catch (err) {
-    console.error(err)
-    libraryError.value = 'Failed to reconcile this title\'s library status.'
+    if (nextStatus !== previousStatus) {
+      libraryNotice.value = `Status changed to ${nextStatus}.`
+    }
+  } catch (cause) {
+    console.error(cause)
+    libraryError.value = 'Failed to update episode progress.'
   } finally {
     savingLibrary.value = false
   }
@@ -234,6 +344,53 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
           <div v-else class="flex aspect-[2/3] items-center justify-center rounded-lg bg-gray-200">
             No poster
           </div>
+
+          <section class="mt-5 space-y-4 rounded-xl bg-gray-50 p-4">
+            <p v-if="libraryLoading" class="text-sm text-gray-500">Loading library status...</p>
+
+            <template v-else>
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium text-gray-700">Status</span>
+                <select
+                  v-model="selectedStatus"
+                  :disabled="savingLibrary"
+                  class="rounded-lg border border-gray-300 bg-white px-3 py-2 disabled:cursor-not-allowed"
+                  @change="handleStatusChange"
+                >
+                  <option
+                    v-for="option in STATUS_OPTIONS"
+                    :key="option.value"
+                    :value="option.value"
+                    :disabled="
+                      media.mediaType === 'tv' &&
+                      option.value === 'completed' &&
+                      !tvCanComplete
+                    "
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+
+              <div v-if="media.mediaType === 'tv' && libraryEntry">
+                <p class="mb-1 text-sm font-medium text-gray-700">Episodes</p>
+                <TvProgressControl
+                  :model-value="watchedEpisodeCount"
+                  :total="totalMainEpisodeCount"
+                  :disabled="savingLibrary"
+                  @commit="updateProgress"
+                />
+              </div>
+
+              <p v-if="libraryError" class="text-sm text-red-600">
+                {{ libraryError }}
+              </p>
+
+              <p v-if="libraryNotice" class="text-sm text-gray-600">
+                {{ libraryNotice }}
+              </p>
+            </template>
+          </section>
         </div>
 
         <div>
@@ -246,17 +403,9 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
           </h1>
 
           <div class="mt-3 flex flex-wrap gap-3 text-sm text-gray-500">
-            <span>
-              {{ getYear(media.date) }}
-            </span>
-
-            <span>
-              {{ media.mediaType === 'movie' ? 'Movie' : 'Series' }}
-            </span>
-
-            <span>
-              {{ media.status }}
-            </span>
+            <span>{{ getYear(media.date) }}</span>
+            <span>{{ media.mediaType === 'movie' ? 'Movie' : 'Series' }}</span>
+            <span>{{ media.status }}</span>
           </div>
 
           <div class="mt-4 flex flex-wrap gap-2">
@@ -268,89 +417,6 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
               {{ genre.name }}
             </span>
           </div>
-
-          <section class="mt-8 max-w-xl rounded-xl bg-gray-50 p-5">
-            <h2 class="text-xl font-semibold">Your library</h2>
-
-            <p v-if="libraryLoading" class="mt-3 text-sm text-gray-500">
-              Loading library status...
-            </p>
-
-            <template v-else>
-              <p v-if="libraryEntry" class="mt-2 text-sm text-gray-600">
-                Saved as
-                <span class="font-medium capitalize text-gray-900">{{ libraryEntry.status }}</span>
-              </p>
-
-              <p v-else class="mt-2 text-sm text-gray-600">
-                Choose a status to add this title to your library.
-              </p>
-
-              <div class="mt-4 flex flex-wrap items-end gap-3">
-                <label class="flex min-w-48 flex-col gap-1">
-                  <span class="text-sm font-medium text-gray-700">Status</span>
-                  <select
-                    v-model="selectedStatus"
-                    :disabled="savingLibrary"
-                    class="rounded-lg border border-gray-300 bg-white px-3 py-2 disabled:cursor-not-allowed"
-                  >
-                    <option disabled value="">Choose a status</option>
-                    <option
-                      v-for="option in STATUS_OPTIONS"
-                      :key="option.value"
-                      :value="option.value"
-                      :disabled="
-                        media.mediaType === 'tv' &&
-                        option.value === 'completed' &&
-                        (!tvCompletionState.ready || !tvCompletionState.canComplete)
-                      "
-                    >
-                      {{ option.label }}
-                    </option>
-                  </select>
-                </label>
-
-                <button
-                  type="button"
-                  :disabled="
-                    savingLibrary ||
-                    !selectedStatus ||
-                    (libraryEntry !== null && selectedStatus === libraryEntry.status)
-                  "
-                  class="rounded-lg bg-black px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  @click="persistSelectedStatus"
-                >
-                  {{ savingLibrary ? 'Saving...' : libraryEntry ? 'Update status' : 'Add to library' }}
-                </button>
-
-                <button
-                  v-if="libraryEntry"
-                  type="button"
-                  :disabled="savingLibrary"
-                  class="rounded-lg bg-red-50 px-4 py-2 text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  @click="removeFromLibrary"
-                >
-                  Remove
-                </button>
-              </div>
-
-              <p v-if="libraryError" class="mt-3 text-sm text-red-600">
-                {{ libraryError }}
-              </p>
-
-              <p v-if="libraryNotice" class="mt-3 text-sm text-gray-600">
-                {{ libraryNotice }}
-              </p>
-            </template>
-          </section>
-
-          <TvEpisodeProgress
-            v-if="media.mediaType === 'tv'"
-            :show="media"
-            :library-entry="libraryEntry"
-            @library-entry-updated="handleLibraryEntryUpdated"
-            @completion-state="handleCompletionState"
-          />
 
           <section class="mt-8">
             <h2 class="text-xl font-semibold">Overview</h2>

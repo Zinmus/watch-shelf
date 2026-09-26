@@ -10,6 +10,7 @@ export interface LibraryEntry {
   posterPath: string | null
   date: string
   status: LibraryStatus
+  watchedEpisodeCount?: number
   addedAt: string
   updatedAt: string
 }
