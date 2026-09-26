@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import ReleaseStatusBadge from '@/components/ReleaseStatusBadge.vue'
 import TvProgressControl from '@/components/TvProgressControl.vue'
 
 import { getMovie, getTvShow } from '@/api/tmdb'
@@ -11,8 +12,9 @@ import {
   saveLibraryEntry,
   updateTvLibraryState,
 } from '@/data/library'
+import { normalizeReleaseStatus } from '@/domain/releaseStatus'
 import {
-  canCompleteTvShow,
+  canSetTvShowCompleted,
   clampWatchedEpisodeCount,
   getStatusAfterTvProgressChange,
   getTotalMainEpisodeCount,
@@ -50,14 +52,20 @@ const totalMainEpisodeCount = computed(() =>
 
 const watchedEpisodeCount = computed(() => libraryEntry.value?.watchedEpisodeCount ?? 0)
 
+const releaseStatus = computed(() =>
+  media.value ? normalizeReleaseStatus(media.value.mediaType, media.value.status) : null,
+)
+
 const tvCanComplete = computed(
   () =>
     media.value?.mediaType === 'tv' &&
-    canCompleteTvShow(
-      media.value.status,
-      watchedEpisodeCount.value,
-      totalMainEpisodeCount.value,
-    ),
+    canSetTvShowCompleted(media.value.status, totalMainEpisodeCount.value),
+)
+
+const showTvProgress = computed(
+  () =>
+    media.value?.mediaType === 'tv' &&
+    (libraryEntry.value?.status === 'watching' || libraryEntry.value?.status === 'completed'),
 )
 
 let loadVersion = 0
@@ -234,7 +242,7 @@ async function handleStatusChange() {
 
   if (nextStatus === 'completed' && media.value.mediaType === 'tv' && !tvCanComplete.value) {
     libraryError.value =
-      'A series can only be completed after it has ended and all main episodes are watched.'
+      'A series can only be completed after it has ended and its episode total is known.'
     selectedStatus.value = previousStatus
     return
   }
@@ -251,14 +259,27 @@ async function handleStatusChange() {
     }
 
     if (media.value.mediaType === 'tv' && libraryEntry.value) {
-      const nextCount = nextStatus === 'planned' ? 0 : watchedEpisodeCount.value
+      const nextCount =
+        nextStatus === 'planned'
+          ? 0
+          : nextStatus === 'completed'
+            ? totalMainEpisodeCount.value
+            : watchedEpisodeCount.value
       libraryEntry.value = await updateTvLibraryState(
         media.value.id,
         nextStatus,
         nextCount,
       )
     } else {
-      libraryEntry.value = await saveLibraryEntry(getLibraryEntryInput(), nextStatus)
+      const initialEpisodeCount =
+        media.value.mediaType === 'tv' && nextStatus === 'completed'
+          ? totalMainEpisodeCount.value
+          : 0
+      libraryEntry.value = await saveLibraryEntry(
+        getLibraryEntryInput(),
+        nextStatus,
+        initialEpisodeCount,
+      )
     }
 
     selectedStatus.value = libraryEntry.value.status
@@ -363,7 +384,7 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
                 </select>
               </label>
 
-              <div v-if="media.mediaType === 'tv' && libraryEntry" class="pt-2">
+              <div v-if="showTvProgress" class="pt-2">
                 <TvProgressControl
                   :model-value="watchedEpisodeCount"
                   :total="totalMainEpisodeCount"
@@ -395,7 +416,7 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
           <div class="mt-3 flex flex-wrap gap-3 text-sm text-gray-500">
             <span>{{ getYear(media.date) }}</span>
             <span>{{ media.mediaType === 'movie' ? 'Movie' : 'Series' }}</span>
-            <span>{{ media.status }}</span>
+            <ReleaseStatusBadge v-if="releaseStatus" :status="releaseStatus" />
           </div>
 
           <div class="mt-4 flex flex-wrap gap-2">

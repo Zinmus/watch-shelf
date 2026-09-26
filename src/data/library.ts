@@ -33,6 +33,7 @@ export async function getLibraryEntries(): Promise<LibraryEntry[]> {
 export async function saveLibraryEntry(
   input: LibraryEntryInput,
   status: LibraryStatus,
+  watchedEpisodeCount?: number,
 ): Promise<LibraryEntry> {
   const database = await openDatabase()
   const transaction = database.transaction(LIBRARY_STORE, 'readwrite')
@@ -48,7 +49,11 @@ export async function saveLibraryEntry(
     ...(input.mediaType === 'tv'
       ? {
           watchedEpisodeCount:
-            status === 'planned' ? 0 : (existingEntry?.watchedEpisodeCount ?? 0),
+            status === 'planned'
+              ? 0
+              : clampStoredEpisodeCount(
+                  watchedEpisodeCount ?? existingEntry?.watchedEpisodeCount ?? 0,
+                ),
         }
       : {}),
     addedAt: existingEntry?.addedAt ?? now,
@@ -59,6 +64,12 @@ export async function saveLibraryEntry(
   await transactionComplete
 
   return entry
+}
+
+function clampStoredEpisodeCount(watchedEpisodeCount: number) {
+  return Number.isFinite(watchedEpisodeCount)
+    ? Math.max(0, Math.trunc(watchedEpisodeCount))
+    : 0
 }
 
 export async function updateTvLibraryState(
@@ -79,9 +90,7 @@ export async function updateTvLibraryState(
     throw new Error('TV library entry not found.')
   }
 
-  const normalizedCount = Number.isFinite(watchedEpisodeCount)
-    ? Math.max(0, Math.trunc(watchedEpisodeCount))
-    : 0
+  const normalizedCount = clampStoredEpisodeCount(watchedEpisodeCount)
   const entry: LibraryEntry = {
     ...existingEntry,
     status,

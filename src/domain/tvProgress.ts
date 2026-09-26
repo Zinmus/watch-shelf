@@ -1,3 +1,5 @@
+import { normalizeReleaseStatus } from '@/domain/releaseStatus'
+
 import type { LibraryStatus } from '@/types/library'
 import type { TvSeasonSummary } from '@/types/tv'
 
@@ -15,7 +17,13 @@ export function clampWatchedEpisodeCount(value: number, totalEpisodeCount: numbe
 }
 
 export function isFinishedTvShow(status: string) {
-  return status === 'Ended' || status === 'Canceled'
+  const normalizedStatus = normalizeReleaseStatus('tv', status)
+
+  return normalizedStatus === 'finished' || normalizedStatus === 'canceled'
+}
+
+export function canSetTvShowCompleted(releaseStatus: string, totalEpisodeCount: number) {
+  return isFinishedTvShow(releaseStatus) && totalEpisodeCount > 0
 }
 
 export function canCompleteTvShow(
@@ -24,8 +32,7 @@ export function canCompleteTvShow(
   totalEpisodeCount: number,
 ) {
   return (
-    isFinishedTvShow(releaseStatus) &&
-    totalEpisodeCount > 0 &&
+    canSetTvShowCompleted(releaseStatus, totalEpisodeCount) &&
     watchedEpisodeCount === totalEpisodeCount
   )
 }

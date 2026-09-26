@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { getReleaseStatusLabel } from '@/domain/releaseStatus'
+import ReleaseStatusBadge from '@/components/ReleaseStatusBadge.vue'
 
 import type { LibraryEntry } from '@/types/library'
 import type { ReleaseStatus } from '@/domain/releaseStatus'
@@ -33,19 +33,6 @@ const progressLabel = computed(() => {
   return 'Loading progress…'
 })
 
-const releaseStatusClass = computed(() => {
-  switch (props.releaseStatus) {
-    case 'on-air':
-      return 'bg-green-50 text-green-700 ring-green-600/20'
-    case 'announced':
-    case 'upcoming':
-      return 'bg-orange-50 text-orange-700 ring-orange-600/20'
-    case 'canceled':
-      return 'bg-red-50 text-red-700 ring-red-600/20'
-    default:
-      return 'bg-gray-50 text-gray-600 ring-gray-500/20'
-  }
-})
 </script>
 
 <template>
@@ -60,13 +47,7 @@ const releaseStatusClass = computed(() => {
           {{ entry.title }}
         </h3>
 
-        <span
-          v-if="releaseStatus"
-          class="rounded px-1.5 py-0.5 text-[0.6875rem] font-medium leading-4 ring-1 ring-inset"
-          :class="releaseStatusClass"
-        >
-          {{ getReleaseStatusLabel(releaseStatus) }}
-        </span>
+        <ReleaseStatusBadge v-if="releaseStatus" :status="releaseStatus" />
       </div>
     </div>
 
