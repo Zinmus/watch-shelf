@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import DiscoverView from '@/views/DiscoverView.vue'
+import LibraryView from '@/views/LibraryView.vue'
 import MediaDetailsView from '@/views/MediaDetailsView.vue'
 
 const router = createRouter({
@@ -11,6 +12,11 @@ const router = createRouter({
       path: '/',
       name: 'discover',
       component: DiscoverView,
+    },
+    {
+      path: '/library',
+      name: 'library',
+      component: LibraryView,
     },
     {
       path: '/title/:type/:id',

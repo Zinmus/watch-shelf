@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import type { MediaItem } from '@/types/media'
+import type { MediaType } from '@/types/media'
+
+interface MediaCardItem {
+  id: number
+  mediaType: MediaType
+  title: string
+  posterPath: string | null
+  date: string
+}
 
 defineProps<{
-  media: MediaItem
+  media: MediaCardItem
 }>()
 
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500'
