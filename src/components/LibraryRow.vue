@@ -8,7 +8,6 @@ import type { ReleaseStatus } from '@/domain/releaseStatus'
 
 const props = defineProps<{
   entry: LibraryEntry
-  showMediaType: boolean
   releaseStatus?: ReleaseStatus
   watchedEpisodeCount?: number
   totalEpisodeCount?: number
@@ -61,13 +60,6 @@ const releaseStatusClass = computed(() => {
         <h3 class="truncate font-medium leading-5 text-gray-950 group-hover:underline">
           {{ entry.title }}
         </h3>
-
-        <span
-          v-if="showMediaType"
-          class="rounded bg-gray-100 px-1.5 py-0.5 text-[0.6875rem] font-medium uppercase tracking-wide text-gray-500"
-        >
-          {{ entry.mediaType === 'movie' ? 'Movie' : 'Series' }}
-        </span>
 
         <span
           v-if="releaseStatus"

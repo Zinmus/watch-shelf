@@ -335,7 +335,6 @@ onBeforeUnmount(() => {
             v-for="entry in section.entries"
             :key="entry.key"
             :entry="entry"
-            :show-media-type="activeType === 'all'"
             :release-status="releaseStatuses.get(entry.key)"
             :watched-episode-count="getWatchedEpisodeCount(entry)"
             :total-episode-count="
