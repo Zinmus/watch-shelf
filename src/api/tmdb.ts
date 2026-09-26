@@ -1,6 +1,5 @@
 import type {
   DiscoverFilters,
-  DiscoverSort,
   Genre,
   MediaItem,
   MediaType,
@@ -9,12 +8,7 @@ import type {
 } from '@/types/media'
 import type { TvSeasonSummary } from '@/types/tv'
 
-const BASE_URL = 'https://api.themoviedb.org/3'
-const ACCESS_TOKEN = import.meta.env.VITE_TMDB_ACCESS_TOKEN
-
-if (!ACCESS_TOKEN) {
-  throw new Error('Missing VITE_TMDB_ACCESS_TOKEN environment variable')
-}
+const BASE_URL = '/api/tmdb'
 
 interface PaginatedResponse<T> {
   page: number
@@ -77,7 +71,7 @@ async function request<T>(
   endpoint: string,
   params: Record<string, string | number> = {},
 ): Promise<T> {
-  const url = new URL(`${BASE_URL}${endpoint}`)
+  const url = new URL(`${BASE_URL}${endpoint}`, window.location.origin)
 
   Object.entries(params).forEach(([key, value]) => {
     url.searchParams.set(key, String(value))
@@ -85,13 +79,12 @@ async function request<T>(
 
   const response = await fetch(url, {
     headers: {
-      Authorization: `Bearer ${ACCESS_TOKEN}`,
       Accept: 'application/json',
     },
   })
 
   if (!response.ok) {
-    throw new Error(`TMDB request failed: ${response.status} ${response.statusText}`)
+    throw new Error(`Media request failed: ${response.status} ${response.statusText}`)
   }
 
   return response.json() as Promise<T>
@@ -133,18 +126,6 @@ function normalizeTvSeasonSummary(season: TvSeasonSummaryResponse): TvSeasonSumm
   }
 }
 
-function getSortValue(mediaType: MediaType, sort: DiscoverSort) {
-  if (sort === 'rating') {
-    return 'vote_average.desc'
-  }
-
-  if (sort === 'date') {
-    return mediaType === 'movie' ? 'primary_release_date.desc' : 'first_air_date.desc'
-  }
-
-  return 'popularity.desc'
-}
-
 function buildDiscoverParams(
   mediaType: MediaType,
   page: number,
@@ -152,34 +133,25 @@ function buildDiscoverParams(
 ): Record<string, string | number> {
   const params: Record<string, string | number> = {
     page,
-    sort_by: getSortValue(mediaType, filters.sortBy),
+    sort: filters.sortBy,
+    type: mediaType,
   }
 
   if (filters.genreId) {
-    params.with_genres = filters.genreId
+    params.genreId = filters.genreId
   }
 
   if (filters.year) {
-    if (mediaType === 'movie') {
-      params.primary_release_year = filters.year
-    } else {
-      params.first_air_date_year = filters.year
-    }
-  }
-
-  // Without this, "rating" can be dominated by
-  // titles that have a 10/10 from only a few votes.
-  if (filters.sortBy === 'rating') {
-    params['vote_count.gte'] = 200
+    params.year = filters.year
   }
 
   return params
 }
 
 export async function getGenres(mediaType: MediaType): Promise<Genre[]> {
-  const endpoint = mediaType === 'movie' ? '/genre/movie/list' : '/genre/tv/list'
-
-  const data = await request<GenreListResponse>(endpoint)
+  const data = await request<GenreListResponse>('/genres', {
+    type: mediaType,
+  })
 
   return data.genres
 }
@@ -191,7 +163,7 @@ export async function getMovies(
   },
 ): Promise<PaginatedResponse<MediaItem>> {
   const data = await request<PaginatedResponse<MovieResponse>>(
-    '/discover/movie',
+    '/discover',
     buildDiscoverParams('movie', page, filters),
   )
 
@@ -208,7 +180,7 @@ export async function getTvShows(
   },
 ): Promise<PaginatedResponse<MediaItem>> {
   const data = await request<PaginatedResponse<TvShowResponse>>(
-    '/discover/tv',
+    '/discover',
     buildDiscoverParams('tv', page, filters),
   )
 
@@ -219,7 +191,7 @@ export async function getTvShows(
 }
 
 export async function getTrending(page = 1): Promise<PaginatedResponse<MediaItem>> {
-  const data = await request<PaginatedResponse<TrendingResponse>>('/trending/all/week', {
+  const data = await request<PaginatedResponse<TrendingResponse>>('/trending', {
     page,
   })
 
@@ -242,7 +214,8 @@ export async function getTrending(page = 1): Promise<PaginatedResponse<MediaItem
 }
 
 export async function searchMovies(query: string, page = 1): Promise<PaginatedResponse<MediaItem>> {
-  const data = await request<PaginatedResponse<MovieResponse>>('/search/movie', {
+  const data = await request<PaginatedResponse<MovieResponse>>('/search', {
+    type: 'movie',
     query,
     page,
   })
@@ -257,7 +230,8 @@ export async function searchTvShows(
   query: string,
   page = 1,
 ): Promise<PaginatedResponse<MediaItem>> {
-  const data = await request<PaginatedResponse<TvShowResponse>>('/search/tv', {
+  const data = await request<PaginatedResponse<TvShowResponse>>('/search', {
+    type: 'tv',
     query,
     page,
   })
@@ -269,7 +243,10 @@ export async function searchTvShows(
 }
 
 export async function getMovie(id: number): Promise<MovieDetails> {
-  const movie = await request<MovieDetailsResponse>(`/movie/${id}`)
+  const movie = await request<MovieDetailsResponse>('/details', {
+    id,
+    type: 'movie',
+  })
 
   return {
     ...normalizeMovie(movie),
@@ -282,7 +259,10 @@ export async function getMovie(id: number): Promise<MovieDetails> {
 }
 
 export async function getTvShow(id: number): Promise<TvShowDetails> {
-  const show = await request<TvShowDetailsResponse>(`/tv/${id}`)
+  const show = await request<TvShowDetailsResponse>('/details', {
+    id,
+    type: 'tv',
+  })
 
   return {
     ...normalizeTvShow(show),
