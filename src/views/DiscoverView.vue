@@ -16,7 +16,7 @@ import type { DiscoverFilters, DiscoverSort, Genre, MediaItem, MediaType } from 
 
 type DiscoverTab = MediaType | 'trending'
 
-const activeType = ref<DiscoverTab>('movie')
+const activeType = ref<DiscoverTab>('trending')
 
 const items = ref<MediaItem[]>([])
 const genres = ref<Genre[]>([])
