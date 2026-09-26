@@ -24,7 +24,6 @@ import type { MediaDetails, MediaType } from '@/types/media'
 type StatusSelection = LibraryStatus | 'not-in-library'
 
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500'
-const BACKDROP_BASE_URL = 'https://image.tmdb.org/t/p/w1280'
 
 const route = useRoute()
 
@@ -322,18 +321,10 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
     </p>
 
     <template v-else-if="media">
-      <div v-if="media.backdropPath" class="relative h-72 overflow-hidden">
-        <img
-          :src="`${BACKDROP_BASE_URL}${media.backdropPath}`"
-          :alt="media.title"
-          class="h-full w-full object-cover"
-        />
-
-        <div class="absolute inset-0 bg-gradient-to-t from-white via-white/20 to-transparent" />
-      </div>
-
-      <div class="mx-auto grid max-w-6xl gap-8 px-4 py-8 md:grid-cols-[240px_1fr]">
-        <div>
+      <div
+        class="mx-auto grid max-w-5xl items-start gap-6 px-4 py-6 sm:grid-cols-[200px_minmax(0,1fr)] sm:py-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-8"
+      >
+        <div class="w-full max-w-[220px]">
           <img
             v-if="media.posterPath"
             :src="`${IMAGE_BASE_URL}${media.posterPath}`"
@@ -393,12 +384,12 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
           </section>
         </div>
 
-        <div>
+        <div class="min-w-0">
           <RouterLink to="/" class="mb-4 inline-block text-sm text-gray-500 hover:text-black">
             ← Back to Discover
           </RouterLink>
 
-          <h1 class="text-4xl font-bold">
+          <h1 class="text-3xl font-bold sm:text-4xl">
             {{ media.title }}
           </h1>
 
@@ -418,7 +409,7 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
             </span>
           </div>
 
-          <section class="mt-8">
+          <section class="mt-6">
             <h2 class="text-xl font-semibold">Overview</h2>
 
             <p class="mt-3 max-w-3xl leading-7 text-gray-700">
