@@ -336,16 +336,16 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
             No poster
           </div>
 
-          <section class="mt-5 space-y-4 rounded-xl bg-gray-50 p-4">
+          <section class="mt-3 space-y-2">
             <p v-if="libraryLoading" class="text-sm text-gray-500">Loading library status...</p>
 
             <template v-else>
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium text-gray-700">Status</span>
+              <label>
+                <span class="sr-only">Status</span>
                 <select
                   v-model="selectedStatus"
                   :disabled="savingLibrary"
-                  class="rounded-lg border border-gray-300 bg-white px-3 py-2 disabled:cursor-not-allowed"
+                  class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
                   @change="handleStatusChange"
                 >
                   <option
@@ -363,8 +363,7 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
                 </select>
               </label>
 
-              <div v-if="media.mediaType === 'tv' && libraryEntry">
-                <p class="mb-1 text-sm font-medium text-gray-700">Episodes</p>
+              <div v-if="media.mediaType === 'tv' && libraryEntry" class="pt-2">
                 <TvProgressControl
                   :model-value="watchedEpisodeCount"
                   :total="totalMainEpisodeCount"
