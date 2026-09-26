@@ -22,6 +22,14 @@ export async function getWatchedEpisodes(showTmdbId: number): Promise<WatchedEpi
   return requestToPromise<WatchedEpisode[]>(request)
 }
 
+export async function getAllWatchedEpisodes(): Promise<WatchedEpisode[]> {
+  const database = await openDatabase()
+  const transaction = database.transaction(WATCHED_EPISODES_STORE, 'readonly')
+  const request = transaction.objectStore(WATCHED_EPISODES_STORE).getAll()
+
+  return requestToPromise<WatchedEpisode[]>(request)
+}
+
 export async function setEpisodeWatched(
   episode: WatchedEpisode,
   watched: boolean,
