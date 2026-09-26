@@ -16,8 +16,8 @@ import { normalizeReleaseStatus } from '@/domain/releaseStatus'
 import {
   canSetTvShowCompleted,
   clampWatchedEpisodeCount,
-  getStatusAfterTvProgressChange,
   getTotalMainEpisodeCount,
+  reconcileTvLibraryState,
 } from '@/domain/tvProgress'
 
 import type { LibraryEntry, LibraryStatus } from '@/types/library'
@@ -69,7 +69,7 @@ const releaseStatus = computed(() =>
 const tvCanComplete = computed(
   () =>
     media.value?.mediaType === 'tv' &&
-    canSetTvShowCompleted(media.value.status, totalMainEpisodeCount.value),
+    canSetTvShowCompleted(totalMainEpisodeCount.value),
 )
 
 const showTvProgress = computed(
@@ -111,20 +111,15 @@ async function reconcileTvState(version: number) {
     return
   }
 
-  const normalizedCount = clampWatchedEpisodeCount(
-    watchedEpisodeCount.value,
-    totalMainEpisodeCount.value,
-  )
-  const normalizedStatus = getStatusAfterTvProgressChange(
+  const reconciledState = reconcileTvLibraryState(
     libraryEntry.value.status,
-    media.value.status,
-    normalizedCount,
+    watchedEpisodeCount.value,
     totalMainEpisodeCount.value,
   )
 
   if (
-    normalizedCount === watchedEpisodeCount.value &&
-    normalizedStatus === libraryEntry.value.status
+    reconciledState.watchedEpisodeCount === watchedEpisodeCount.value &&
+    reconciledState.status === libraryEntry.value.status
   ) {
     return
   }
@@ -133,8 +128,8 @@ async function reconcileTvState(version: number) {
     savingLibrary.value = true
     const updatedEntry = await updateTvLibraryState(
       media.value.id,
-      normalizedStatus,
-      normalizedCount,
+      reconciledState.status,
+      reconciledState.watchedEpisodeCount,
     )
 
     if (version !== loadVersion) {
@@ -142,7 +137,7 @@ async function reconcileTvState(version: number) {
     }
 
     libraryEntry.value = updatedEntry
-    selectedStatus.value = normalizedStatus
+    selectedStatus.value = reconciledState.status
     libraryNotice.value = 'Progress and status were updated to match current series data.'
   } catch (cause) {
     if (version === loadVersion) {
@@ -286,8 +281,7 @@ async function handleStatusChange() {
   }
 
   if (nextStatus === 'completed' && media.value.mediaType === 'tv' && !tvCanComplete.value) {
-    libraryError.value =
-      'A series can only be completed after it has ended and its episode total is known.'
+    libraryError.value = 'A series can only be completed when its episode total is known.'
     selectedStatus.value = previousStatus
     return
   }
@@ -344,12 +338,12 @@ async function updateProgress(requestedCount: number) {
 
   const nextCount = clampWatchedEpisodeCount(requestedCount, totalMainEpisodeCount.value)
   const previousStatus = libraryEntry.value.status
-  const nextStatus = getStatusAfterTvProgressChange(
+  const reconciledState = reconcileTvLibraryState(
     previousStatus,
-    media.value.status,
     nextCount,
     totalMainEpisodeCount.value,
   )
+  const nextStatus = reconciledState.status
 
   if (nextCount === watchedEpisodeCount.value && nextStatus === previousStatus) {
     return

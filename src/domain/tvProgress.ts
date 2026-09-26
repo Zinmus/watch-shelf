@@ -1,5 +1,3 @@
-import { normalizeReleaseStatus } from '@/domain/releaseStatus'
-
 import type { LibraryStatus } from '@/types/library'
 import type { TvSeasonSummary } from '@/types/tv'
 
@@ -16,43 +14,32 @@ export function clampWatchedEpisodeCount(value: number, totalEpisodeCount: numbe
   return Math.min(Math.max(normalizedValue, 0), normalizedTotal)
 }
 
-export function isFinishedTvShow(status: string) {
-  const normalizedStatus = normalizeReleaseStatus('tv', status)
-
-  return normalizedStatus === 'finished' || normalizedStatus === 'canceled'
+export function canSetTvShowCompleted(totalEpisodeCount: number) {
+  return totalEpisodeCount > 0
 }
 
-export function canSetTvShowCompleted(releaseStatus: string, totalEpisodeCount: number) {
-  return isFinishedTvShow(releaseStatus) && totalEpisodeCount > 0
+interface ReconciledTvLibraryState {
+  status: LibraryStatus
+  watchedEpisodeCount: number
 }
 
-export function canCompleteTvShow(
-  releaseStatus: string,
-  watchedEpisodeCount: number,
-  totalEpisodeCount: number,
-) {
-  return (
-    canSetTvShowCompleted(releaseStatus, totalEpisodeCount) &&
-    watchedEpisodeCount === totalEpisodeCount
-  )
-}
-
-export function getStatusAfterTvProgressChange(
+export function reconcileTvLibraryState(
   currentStatus: LibraryStatus,
-  releaseStatus: string,
   watchedEpisodeCount: number,
   totalEpisodeCount: number,
-): LibraryStatus {
-  if (canCompleteTvShow(releaseStatus, watchedEpisodeCount, totalEpisodeCount)) {
-    return 'completed'
+): ReconciledTvLibraryState {
+  const normalizedCount = clampWatchedEpisodeCount(watchedEpisodeCount, totalEpisodeCount)
+
+  if (canSetTvShowCompleted(totalEpisodeCount) && normalizedCount === totalEpisodeCount) {
+    return { status: 'completed', watchedEpisodeCount: normalizedCount }
   }
 
   if (
     currentStatus === 'completed' ||
-    (currentStatus === 'planned' && watchedEpisodeCount > 0)
+    (currentStatus === 'planned' && normalizedCount > 0)
   ) {
-    return 'watching'
+    return { status: 'watching', watchedEpisodeCount: normalizedCount }
   }
 
-  return currentStatus
+  return { status: currentStatus, watchedEpisodeCount: normalizedCount }
 }
