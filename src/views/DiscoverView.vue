@@ -335,7 +335,7 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="mx-auto max-w-7xl px-4 py-8">
-    <h1 class="mb-6 text-3xl font-bold">Discover</h1>
+    <h1 class="mb-6 text-3xl font-bold text-gray-950 dark:text-white">Discover</h1>
 
     <!-- Discover toolbar -->
 
@@ -344,7 +344,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="rounded-lg px-4 py-2"
-          :class="activeType === 'trending' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'"
+          :class="activeType === 'trending' ? 'bg-gray-950 text-white dark:bg-gray-100 dark:text-gray-950' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'"
           @click="selectType('trending')"
         >
           Trending
@@ -353,7 +353,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="rounded-lg px-4 py-2"
-          :class="activeType === 'movie' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'"
+          :class="activeType === 'movie' ? 'bg-gray-950 text-white dark:bg-gray-100 dark:text-gray-950' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'"
           @click="selectType('movie')"
         >
           Movies
@@ -362,7 +362,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="rounded-lg px-4 py-2"
-          :class="activeType === 'tv' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'"
+          :class="activeType === 'tv' ? 'bg-gray-950 text-white dark:bg-gray-100 dark:text-gray-950' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'"
           @click="selectType('tv')"
         >
           Series
@@ -381,14 +381,14 @@ onBeforeUnmount(() => {
               type="search"
               aria-label="Search movies or series"
               placeholder="Search..."
-              class="h-10 w-48 appearance-none rounded-lg border border-gray-300 bg-white pr-10 pl-3 text-sm outline-none focus:border-black sm:w-56"
+              class="h-10 w-48 appearance-none rounded-lg border border-gray-300 bg-white pr-10 pl-3 text-sm text-gray-950 outline-none placeholder:text-gray-400 focus:border-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-gray-400 sm:w-56"
             />
 
             <button
               v-if="searchQuery"
               type="button"
               aria-label="Clear search"
-              class="absolute top-1/2 right-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-1"
+              class="absolute top-1/2 right-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-1 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
               @click="clearSearch"
             >
               <svg
@@ -407,7 +407,7 @@ onBeforeUnmount(() => {
               v-else
               type="submit"
               aria-label="Submit search"
-              class="absolute top-1/2 right-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-1"
+              class="absolute top-1/2 right-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-1 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
             >
               <svg
                 aria-hidden="true"
@@ -433,8 +433,8 @@ onBeforeUnmount(() => {
           :aria-expanded="filtersOpen"
           aria-controls="discover-filters"
           :disabled="Boolean(searchQuery)"
-          class="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-          :class="{ 'border-gray-900 text-gray-900': filtersOpen || activeFilterCount }"
+          class="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+          :class="{ 'border-gray-900 text-gray-900 dark:border-gray-400 dark:text-white': filtersOpen || activeFilterCount }"
           @click="toggleFilters"
         >
           <svg
@@ -456,14 +456,14 @@ onBeforeUnmount(() => {
           v-if="filtersOpen"
           id="discover-filters"
           ref="filtersPanel"
-          class="absolute top-12 right-0 z-20 grid w-80 max-w-[calc(100vw-2rem)] gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-lg sm:w-96 sm:grid-cols-2"
+          class="absolute top-12 right-0 z-20 grid w-80 max-w-[calc(100vw-2rem)] gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/30 sm:w-96 sm:grid-cols-2"
           @submit.prevent="applyFilters"
         >
           <label class="flex flex-col gap-1">
-            <span class="text-sm font-medium text-gray-700">Genre</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Genre</span>
             <select
               v-model="filterGenreId"
-              class="rounded-lg border border-gray-300 bg-white px-3 py-2"
+              class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
             >
               <option value="">All genres</option>
               <option v-for="genre in genres" :key="genre.id" :value="genre.id">
@@ -473,22 +473,22 @@ onBeforeUnmount(() => {
           </label>
 
           <label class="flex flex-col gap-1">
-            <span class="text-sm font-medium text-gray-700">Year</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Year</span>
             <input
               v-model.number="filterYear"
               type="number"
               min="1900"
               max="2100"
               placeholder="Any year"
-              class="rounded-lg border border-gray-300 bg-white px-3 py-2"
+              class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-950 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
             />
           </label>
 
           <label class="flex flex-col gap-1 sm:col-span-2">
-            <span class="text-sm font-medium text-gray-700">Sort by</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Sort by</span>
             <select
               v-model="filterSort"
-              class="rounded-lg border border-gray-300 bg-white px-3 py-2"
+              class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
             >
               <option value="popularity">Popularity</option>
               <option value="rating">Rating</option>
@@ -499,27 +499,27 @@ onBeforeUnmount(() => {
           <div class="flex justify-end gap-2 sm:col-span-2">
             <button
               type="button"
-              class="rounded-lg bg-gray-100 px-4 py-2 text-gray-700"
+              class="rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
               @click="resetFilters"
             >
               Reset
             </button>
-            <button type="submit" class="rounded-lg bg-black px-4 py-2 text-white">Apply</button>
+            <button type="submit" class="rounded-lg bg-gray-950 px-4 py-2 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-950 dark:hover:bg-white">Apply</button>
           </div>
         </form>
       </div>
     </div>
 
-    <p v-if="searchQuery && activeType !== 'trending'" class="mb-5 text-sm text-gray-500">
+    <p v-if="searchQuery && activeType !== 'trending'" class="mb-5 text-sm text-gray-500 dark:text-gray-400">
       Results for
-      <strong class="text-gray-800"> "{{ searchQuery }}" </strong>
+      <strong class="text-gray-800 dark:text-gray-200"> "{{ searchQuery }}" </strong>
 
       — clear the search to use Discover filters.
     </p>
 
     <!-- Results -->
 
-    <p v-if="error && items.length === 0" class="text-red-600">
+    <p v-if="error && items.length === 0" class="text-red-600 dark:text-red-400">
       {{ error }}
     </p>
 
@@ -527,7 +527,7 @@ onBeforeUnmount(() => {
       <MediaCard v-for="item in items" :key="`${item.mediaType}-${item.id}`" :media="item" />
     </div>
 
-    <p v-if="!loading && !error && items.length === 0" class="py-12 text-center text-gray-500">
+    <p v-if="!loading && !error && items.length === 0" class="py-12 text-center text-gray-500 dark:text-gray-400">
       No results found.
     </p>
 
@@ -535,13 +535,13 @@ onBeforeUnmount(() => {
 
     <div ref="loadMoreTrigger" class="h-1" />
 
-    <p v-if="loading" class="py-6 text-center text-gray-500">Loading...</p>
+    <p v-if="loading" class="py-6 text-center text-gray-500 dark:text-gray-400">Loading...</p>
 
-    <p v-else-if="error" class="py-6 text-center text-red-600">
+    <p v-else-if="error" class="py-6 text-center text-red-600 dark:text-red-400">
       {{ error }}
     </p>
 
-    <p v-else-if="!hasMore && items.length > 0" class="py-6 text-center text-gray-500">
+    <p v-else-if="!hasMore && items.length > 0" class="py-6 text-center text-gray-500 dark:text-gray-400">
       No more results.
     </p>
 
@@ -551,7 +551,7 @@ onBeforeUnmount(() => {
       v-if="showScrollTop"
       type="button"
       aria-label="Scroll to top"
-      class="fixed right-6 bottom-6 flex h-11 w-11 items-center justify-center rounded-full bg-black text-xl text-white shadow-lg transition hover:scale-105"
+      class="fixed right-6 bottom-6 flex h-11 w-11 items-center justify-center rounded-full bg-gray-950 text-xl text-white shadow-lg transition hover:scale-105 dark:bg-gray-100 dark:text-gray-950 dark:shadow-black/30"
       @click="scrollToTop"
     >
       ↑

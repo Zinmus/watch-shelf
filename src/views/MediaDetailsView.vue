@@ -374,9 +374,9 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
 
 <template>
   <main>
-    <p v-if="loading" class="py-12 text-center text-gray-500">Loading...</p>
+    <p v-if="loading" class="py-12 text-center text-gray-500 dark:text-gray-400">Loading...</p>
 
-    <p v-else-if="error" class="py-12 text-center text-red-600">
+    <p v-else-if="error" class="py-12 text-center text-red-600 dark:text-red-400">
       {{ error }}
     </p>
 
@@ -392,12 +392,12 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
             class="w-full rounded-lg object-cover"
           />
 
-          <div v-else class="flex aspect-[2/3] items-center justify-center rounded-lg bg-gray-200">
+          <div v-else class="flex aspect-[2/3] items-center justify-center rounded-lg bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
             No poster
           </div>
 
           <section class="mt-3 space-y-2">
-            <p v-if="libraryLoading" class="text-sm text-gray-500">Loading library status...</p>
+            <p v-if="libraryLoading" class="text-sm text-gray-500 dark:text-gray-400">Loading library status...</p>
 
             <template v-else>
               <label>
@@ -405,7 +405,7 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
                 <select
                   v-model="selectedStatus"
                   :disabled="savingLibrary"
-                  class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
+                  class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
                   @change="handleStatusChange"
                 >
                   <option
@@ -432,11 +432,11 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
                 />
               </div>
 
-              <p v-if="libraryError" class="text-sm text-red-600">
+              <p v-if="libraryError" class="text-sm text-red-600 dark:text-red-400">
                 {{ libraryError }}
               </p>
 
-              <p v-if="libraryNotice" class="text-sm text-gray-600">
+              <p v-if="libraryNotice" class="text-sm text-gray-600 dark:text-gray-400">
                 {{ libraryNotice }}
               </p>
             </template>
@@ -444,15 +444,15 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
         </div>
 
         <div class="min-w-0">
-          <RouterLink to="/" class="mb-4 inline-block text-sm text-gray-500 hover:text-black">
+          <RouterLink to="/" class="mb-4 inline-block text-sm text-gray-500 hover:text-black dark:text-gray-400 dark:hover:text-white">
             ← Back to Discover
           </RouterLink>
 
-          <h1 class="text-3xl font-bold sm:text-4xl">
+          <h1 class="text-3xl font-bold text-gray-950 dark:text-white sm:text-4xl">
             {{ media.title }}
           </h1>
 
-          <div class="mt-3 flex flex-wrap gap-3 text-sm text-gray-500">
+          <div class="mt-3 flex flex-wrap gap-3 text-sm text-gray-500 dark:text-gray-400">
             <span>{{ getYear(media.date) }}</span>
             <span>{{ media.mediaType === 'movie' ? 'Movie' : 'Series' }}</span>
             <ReleaseStatusBadge v-if="releaseStatus" :status="releaseStatus" />
@@ -462,16 +462,16 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
             <span
               v-for="genre in media.genres"
               :key="genre.id"
-              class="rounded-full bg-gray-100 px-3 py-1 text-sm"
+              class="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-300"
             >
               {{ genre.name }}
             </span>
           </div>
 
           <section class="mt-6">
-            <h2 class="text-xl font-semibold">Overview</h2>
+            <h2 class="text-xl font-semibold text-gray-950 dark:text-gray-100">Overview</h2>
 
-            <p class="mt-3 max-w-3xl leading-7 text-gray-700">
+            <p class="mt-3 max-w-3xl leading-7 text-gray-700 dark:text-gray-300">
               {{ media.overview || 'No overview available.' }}
             </p>
           </section>

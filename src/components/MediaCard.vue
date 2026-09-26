@@ -21,27 +21,27 @@ function getYear(date: string) {
 </script>
 
 <template>
-  <RouterLink :to="`/title/${media.mediaType}/${media.id}`" class="block">
+  <RouterLink :to="`/title/${media.mediaType}/${media.id}`" class="group block rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4">
     <article>
       <img
         v-if="media.posterPath"
         :src="`${IMAGE_BASE_URL}${media.posterPath}`"
         :alt="media.title"
-        class="aspect-[2/3] w-full rounded-lg object-cover"
+        class="aspect-[2/3] w-full rounded-lg object-cover transition-opacity group-hover:opacity-90"
       />
 
       <div
         v-else
-        class="flex aspect-[2/3] w-full items-center justify-center rounded-lg bg-gray-200"
+        class="flex aspect-[2/3] w-full items-center justify-center rounded-lg bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
       >
         No poster
       </div>
 
-      <h2 class="mt-2 font-medium">
+      <h2 class="mt-2 font-medium text-gray-950 group-hover:underline dark:text-gray-100">
         {{ media.title }}
       </h2>
 
-      <div class="mt-1 flex items-center gap-2 text-sm text-gray-500">
+      <div class="mt-1 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
         <span>
           {{ getYear(media.date) }}
         </span>
