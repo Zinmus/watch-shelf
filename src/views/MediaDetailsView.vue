@@ -39,12 +39,22 @@ const error = ref<string | null>(null)
 const libraryError = ref<string | null>(null)
 const libraryNotice = ref<string | null>(null)
 
-const STATUS_OPTIONS: { value: StatusSelection; label: string }[] = [
+const MOVIE_STATUS_OPTIONS: { value: StatusSelection; label: string }[] = [
+  { value: 'not-in-library', label: 'Not in library' },
+  { value: 'planned', label: 'Planned' },
+  { value: 'completed', label: 'Completed' },
+]
+
+const TV_STATUS_OPTIONS: { value: StatusSelection; label: string }[] = [
   { value: 'not-in-library', label: 'Not in library' },
   { value: 'planned', label: 'Planned' },
   { value: 'watching', label: 'Watching' },
   { value: 'completed', label: 'Completed' },
 ]
+
+const statusOptions = computed(() =>
+  media.value?.mediaType === 'movie' ? MOVIE_STATUS_OPTIONS : TV_STATUS_OPTIONS,
+)
 
 const totalMainEpisodeCount = computed(() =>
   media.value?.mediaType === 'tv' ? getTotalMainEpisodeCount(media.value.seasons) : 0,
@@ -146,6 +156,34 @@ async function reconcileTvState(version: number) {
   }
 }
 
+async function reconcileMovieState(version: number) {
+  if (media.value?.mediaType !== 'movie' || libraryEntry.value?.status !== 'watching') {
+    return
+  }
+
+  try {
+    savingLibrary.value = true
+    const updatedEntry = await saveLibraryEntry(getLibraryEntryInput(), 'planned')
+
+    if (version !== loadVersion) {
+      return
+    }
+
+    libraryEntry.value = updatedEntry
+    selectedStatus.value = updatedEntry.status
+    libraryNotice.value = 'Status was updated to Planned for this movie.'
+  } catch (cause) {
+    if (version === loadVersion) {
+      console.error(cause)
+      libraryError.value = 'Failed to normalize this movie\'s library state.'
+    }
+  } finally {
+    if (version === loadVersion) {
+      savingLibrary.value = false
+    }
+  }
+}
+
 async function loadMedia() {
   const version = ++loadVersion
   const type = String(route.params.type)
@@ -189,7 +227,10 @@ async function loadMedia() {
 
   if (libraryResult.status === 'fulfilled') {
     libraryEntry.value = libraryResult.value ?? null
-    selectedStatus.value = libraryResult.value?.status ?? 'not-in-library'
+    selectedStatus.value =
+      type === 'movie' && libraryResult.value?.status === 'watching'
+        ? 'planned'
+        : (libraryResult.value?.status ?? 'not-in-library')
   } else {
     console.error(libraryResult.reason)
     libraryError.value = 'Failed to load this title\'s library state.'
@@ -199,7 +240,11 @@ async function loadMedia() {
   libraryLoading.value = false
 
   if (detailsResult.status === 'fulfilled' && libraryResult.status === 'fulfilled') {
-    await reconcileTvState(version)
+    if (type === 'movie') {
+      await reconcileMovieState(version)
+    } else {
+      await reconcileTvState(version)
+    }
   }
 }
 
@@ -370,7 +415,7 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
                   @change="handleStatusChange"
                 >
                   <option
-                    v-for="option in STATUS_OPTIONS"
+                    v-for="option in statusOptions"
                     :key="option.value"
                     :value="option.value"
                     :disabled="
