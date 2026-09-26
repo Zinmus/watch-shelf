@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import MediaCard from '@/components/MediaCard.vue'
 
@@ -30,6 +30,10 @@ const error = ref<string | null>(null)
 const searchInput = ref('')
 const searchQuery = ref('')
 
+const filtersOpen = ref(false)
+const filtersPanel = ref<HTMLElement | null>(null)
+const filtersButton = ref<HTMLButtonElement | null>(null)
+
 const filterGenreId = ref<number | ''>('')
 const filterYear = ref<number | ''>('')
 const filterSort = ref<DiscoverSort>('popularity')
@@ -41,6 +45,16 @@ const appliedFilters = ref<DiscoverFilters>({
 const loadMoreTrigger = ref<HTMLElement | null>(null)
 
 const showScrollTop = ref(false)
+
+const activeFilterCount = computed(() => {
+  let count = 0
+
+  if (appliedFilters.value.genreId !== undefined) count++
+  if (appliedFilters.value.year !== undefined) count++
+  if (appliedFilters.value.sortBy !== 'popularity') count++
+
+  return count
+})
 
 let observer: IntersectionObserver | null = null
 
@@ -141,6 +155,7 @@ async function selectType(type: DiscoverTab) {
   }
 
   activeType.value = type
+  filtersOpen.value = false
 
   /*
    * Movie and TV genre IDs are separate lists,
@@ -171,6 +186,10 @@ async function submitSearch() {
   await resetAndLoad()
 }
 
+function toggleFilters() {
+  filtersOpen.value = !filtersOpen.value
+}
+
 async function clearSearch() {
   if (!searchQuery.value && !searchInput.value) {
     return
@@ -195,6 +214,7 @@ async function applyFilters() {
     year: filterYear.value === '' ? undefined : filterYear.value,
   }
 
+  filtersOpen.value = false
   await resetAndLoad()
 }
 
@@ -242,8 +262,31 @@ function scrollToTop() {
   })
 }
 
+function handleDocumentPointerDown(event: PointerEvent) {
+  const target = event.target as Node
+
+  if (
+    filtersOpen.value &&
+    !filtersPanel.value?.contains(target) &&
+    !filtersButton.value?.contains(target)
+  ) {
+    filtersOpen.value = false
+  }
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+
+  if (filtersOpen.value) {
+    filtersOpen.value = false
+    filtersButton.value?.focus()
+  }
+}
+
 onMounted(async () => {
   window.addEventListener('scroll', handleScroll)
+  document.addEventListener('pointerdown', handleDocumentPointerDown)
+  document.addEventListener('keydown', handleKeydown)
 
   await loadGenres()
   await loadMedia()
@@ -258,6 +301,8 @@ onBeforeUnmount(() => {
   observer?.disconnect()
 
   window.removeEventListener('scroll', handleScroll)
+  document.removeEventListener('pointerdown', handleDocumentPointerDown)
+  document.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
@@ -265,140 +310,178 @@ onBeforeUnmount(() => {
   <main class="mx-auto max-w-7xl px-4 py-8">
     <h1 class="mb-6 text-3xl font-bold">Discover</h1>
 
-    <!-- Search -->
+    <!-- Discover toolbar -->
 
-    <form class="mb-6 flex gap-2" @submit.prevent="submitSearch">
-      <input
-        v-model="searchInput"
-        :disabled="activeType === 'trending'"
-        type="search"
-        placeholder="Search..."
-        class="min-w-0 flex-1 rounded-lg border border-gray-300 px-4 py-2 outline-none focus:border-black"
-      />
-
-      <button
-        type="submit"
-        :disabled="activeType === 'trending'"
-        class="rounded-lg bg-black px-4 py-2 text-white disabled:cursor-not-allowed"
-      >
-        Search
-      </button>
-
-      <button
-        v-if="searchQuery && activeType !== 'trending'"
-        type="button"
-        class="rounded-lg bg-gray-100 px-4 py-2 text-gray-700"
-        @click="clearSearch"
-      >
-        Clear
-      </button>
-    </form>
-
-    <!-- Media type -->
-
-    <div class="mb-6 flex gap-2">
-      <button
-        type="button"
-        class="rounded-lg px-4 py-2"
-        :class="activeType === 'trending' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'"
-        @click="selectType('trending')"
-      >
-        Trending
-      </button>
-
-      <button
-        type="button"
-        class="rounded-lg px-4 py-2"
-        :class="activeType === 'movie' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'"
-        @click="selectType('movie')"
-      >
-        Movies
-      </button>
-
-      <button
-        type="button"
-        class="rounded-lg px-4 py-2"
-        :class="activeType === 'tv' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'"
-        @click="selectType('tv')"
-      >
-        Series
-      </button>
-    </div>
-
-    <!-- Discover filters -->
-
-    <form
-      class="mb-8 grid gap-3 rounded-xl bg-gray-50 p-4 sm:grid-cols-2 lg:grid-cols-4"
-      :class="{
-        'opacity-50': searchQuery || activeType === 'trending',
-      }"
-      @submit.prevent="applyFilters"
-    >
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-gray-700"> Genre </span>
-
-        <select
-          v-model="filterGenreId"
-          :disabled="Boolean(searchQuery) || activeType === 'trending'"
-          class="rounded-lg border border-gray-300 bg-white px-3 py-2"
-        >
-          <option value="">All genres</option>
-
-          <option v-for="genre in genres" :key="genre.id" :value="genre.id">
-            {{ genre.name }}
-          </option>
-        </select>
-      </label>
-
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-gray-700"> Year </span>
-
-        <input
-          v-model.number="filterYear"
-          :disabled="Boolean(searchQuery) || activeType === 'trending'"
-          type="number"
-          min="1900"
-          max="2100"
-          placeholder="Any year"
-          class="rounded-lg border border-gray-300 bg-white px-3 py-2"
-        />
-      </label>
-
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-gray-700"> Sort by </span>
-
-        <select
-          v-model="filterSort"
-          :disabled="Boolean(searchQuery) || activeType === 'trending'"
-          class="rounded-lg border border-gray-300 bg-white px-3 py-2"
-        >
-          <option value="popularity">Popularity</option>
-
-          <option value="rating">Rating</option>
-
-          <option value="date">Release date</option>
-        </select>
-      </label>
-
-      <div class="flex items-end gap-2">
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex gap-2">
         <button
-          type="submit"
-          :disabled="Boolean(searchQuery) || activeType === 'trending'"
-          class="rounded-lg bg-black px-4 py-2 text-white disabled:cursor-not-allowed"
+          type="button"
+          class="rounded-lg px-4 py-2"
+          :class="activeType === 'trending' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'"
+          @click="selectType('trending')"
         >
-          Apply
+          Trending
         </button>
 
         <button
           type="button"
-          :disabled="Boolean(searchQuery) || activeType === 'trending'"
-          class="rounded-lg bg-gray-200 px-4 py-2 text-gray-700 disabled:cursor-not-allowed"
-          @click="resetFilters"
+          class="rounded-lg px-4 py-2"
+          :class="activeType === 'movie' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'"
+          @click="selectType('movie')"
         >
-          Reset
+          Movies
+        </button>
+
+        <button
+          type="button"
+          class="rounded-lg px-4 py-2"
+          :class="activeType === 'tv' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'"
+          @click="selectType('tv')"
+        >
+          Series
         </button>
       </div>
-    </form>
+
+      <div v-if="activeType !== 'trending'" class="relative flex flex-wrap items-center gap-2">
+        <form
+          class="flex flex-wrap items-center gap-2"
+          role="search"
+          @submit.prevent="submitSearch"
+        >
+          <div class="relative">
+            <input
+              v-model="searchInput"
+              type="search"
+              aria-label="Search movies or series"
+              placeholder="Search..."
+              class="h-10 w-48 appearance-none rounded-lg border border-gray-300 bg-white pr-10 pl-3 text-sm outline-none focus:border-black sm:w-56"
+            />
+
+            <button
+              v-if="searchQuery"
+              type="button"
+              aria-label="Clear search"
+              class="absolute top-1/2 right-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-1"
+              @click="clearSearch"
+            >
+              <svg
+                aria-hidden="true"
+                class="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="m6 6 12 12M18 6 6 18" />
+              </svg>
+            </button>
+
+            <button
+              v-else
+              type="submit"
+              aria-label="Submit search"
+              class="absolute top-1/2 right-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-1"
+            >
+              <svg
+                aria-hidden="true"
+                class="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-4-4" />
+              </svg>
+            </button>
+          </div>
+        </form>
+
+        <button
+          ref="filtersButton"
+          type="button"
+          :aria-label="
+            activeFilterCount ? `Open filters, ${activeFilterCount} active` : 'Open filters'
+          "
+          :aria-expanded="filtersOpen"
+          aria-controls="discover-filters"
+          :disabled="Boolean(searchQuery)"
+          class="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          :class="{ 'border-gray-900 text-gray-900': filtersOpen || activeFilterCount }"
+          @click="toggleFilters"
+        >
+          <svg
+            aria-hidden="true"
+            class="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M4 7h16M7 12h10M10 17h4" />
+          </svg>
+          <span
+            >Filters<span v-if="activeFilterCount"> ({{ activeFilterCount }})</span></span
+          >
+        </button>
+
+        <form
+          v-if="filtersOpen"
+          id="discover-filters"
+          ref="filtersPanel"
+          class="absolute top-12 right-0 z-20 grid w-80 max-w-[calc(100vw-2rem)] gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-lg sm:w-96 sm:grid-cols-2"
+          @submit.prevent="applyFilters"
+        >
+          <label class="flex flex-col gap-1">
+            <span class="text-sm font-medium text-gray-700">Genre</span>
+            <select
+              v-model="filterGenreId"
+              class="rounded-lg border border-gray-300 bg-white px-3 py-2"
+            >
+              <option value="">All genres</option>
+              <option v-for="genre in genres" :key="genre.id" :value="genre.id">
+                {{ genre.name }}
+              </option>
+            </select>
+          </label>
+
+          <label class="flex flex-col gap-1">
+            <span class="text-sm font-medium text-gray-700">Year</span>
+            <input
+              v-model.number="filterYear"
+              type="number"
+              min="1900"
+              max="2100"
+              placeholder="Any year"
+              class="rounded-lg border border-gray-300 bg-white px-3 py-2"
+            />
+          </label>
+
+          <label class="flex flex-col gap-1 sm:col-span-2">
+            <span class="text-sm font-medium text-gray-700">Sort by</span>
+            <select
+              v-model="filterSort"
+              class="rounded-lg border border-gray-300 bg-white px-3 py-2"
+            >
+              <option value="popularity">Popularity</option>
+              <option value="rating">Rating</option>
+              <option value="date">Release date</option>
+            </select>
+          </label>
+
+          <div class="flex justify-end gap-2 sm:col-span-2">
+            <button
+              type="button"
+              class="rounded-lg bg-gray-100 px-4 py-2 text-gray-700"
+              @click="resetFilters"
+            >
+              Reset
+            </button>
+            <button type="submit" class="rounded-lg bg-black px-4 py-2 text-white">Apply</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <p v-if="searchQuery && activeType !== 'trending'" class="mb-5 text-sm text-gray-500">
       Results for
