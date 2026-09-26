@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import MediaCard from '@/components/MediaCard.vue'
+import {
+  readDiscoverSession,
+  writeDiscoverSession,
+  type DiscoverTab,
+} from '@/domain/discoverSession'
 
 import {
   getGenres,
@@ -14,9 +19,10 @@ import {
 
 import type { DiscoverFilters, DiscoverSort, Genre, MediaItem, MediaType } from '@/types/media'
 
-type DiscoverTab = MediaType | 'trending'
+const savedState = readDiscoverSession()
 
-const activeType = ref<DiscoverTab>('trending')
+const activeType = ref<DiscoverTab>(savedState?.activeType ?? 'trending')
+const filterType = ref<MediaType | null>(savedState?.filterType ?? null)
 
 const items = ref<MediaItem[]>([])
 const genres = ref<Genre[]>([])
@@ -27,19 +33,21 @@ const hasMore = ref(true)
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-const searchInput = ref('')
-const searchQuery = ref('')
+const searchInput = ref(savedState?.searchInput ?? '')
+const searchQuery = ref(savedState?.searchQuery ?? '')
 
 const filtersOpen = ref(false)
 const filtersPanel = ref<HTMLElement | null>(null)
 const filtersButton = ref<HTMLButtonElement | null>(null)
 
-const filterGenreId = ref<number | ''>('')
-const filterYear = ref<number | ''>('')
-const filterSort = ref<DiscoverSort>('popularity')
+const filterGenreId = ref<number | ''>(savedState?.genreId ?? '')
+const filterYear = ref<number | ''>(savedState?.year ?? '')
+const filterSort = ref<DiscoverSort>(savedState?.sortBy ?? 'popularity')
 
 const appliedFilters = ref<DiscoverFilters>({
-  sortBy: 'popularity',
+  sortBy: savedState?.sortBy ?? 'popularity',
+  genreId: savedState?.genreId ?? undefined,
+  year: savedState?.year ?? undefined,
 })
 
 const loadMoreTrigger = ref<HTMLElement | null>(null)
@@ -63,6 +71,22 @@ let observer: IntersectionObserver | null = null
  * after the user changes type/search/filters.
  */
 let requestVersion = 0
+
+watch(
+  [activeType, filterType, appliedFilters, searchQuery, searchInput],
+  () => {
+    writeDiscoverSession({
+      activeType: activeType.value,
+      filterType: filterType.value,
+      genreId: appliedFilters.value.genreId ?? null,
+      year: appliedFilters.value.year ?? null,
+      sortBy: appliedFilters.value.sortBy,
+      searchQuery: searchQuery.value,
+      searchInput: searchInput.value,
+    })
+  },
+  { deep: true, flush: 'sync' },
+)
 
 async function loadMedia() {
   if (loading.value || !hasMore.value) {
@@ -157,18 +181,21 @@ async function selectType(type: DiscoverTab) {
   activeType.value = type
   filtersOpen.value = false
 
-  /*
-   * Movie and TV genre IDs are separate lists,
-   * so clear the selected genre when switching.
-   */
-  filterGenreId.value = ''
-
-  appliedFilters.value = {
-    ...appliedFilters.value,
-    genreId: undefined,
-  }
-
   if (type !== 'trending') {
+    /*
+     * Movie and TV genre IDs are separate lists. A trip through Trending
+     * retains the genre for the catalog it came from, while changing
+     * catalogs clears an incompatible genre.
+     */
+    if (filterType.value !== null && filterType.value !== type) {
+      filterGenreId.value = ''
+      appliedFilters.value = {
+        ...appliedFilters.value,
+        genreId: undefined,
+      }
+    }
+
+    filterType.value = type
     await loadGenres()
   }
   await resetAndLoad()
