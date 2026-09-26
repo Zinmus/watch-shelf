@@ -3,10 +3,12 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import LibraryRow from '@/components/LibraryRow.vue'
 
-import { getTvShow } from '@/api/tmdb'
+import { getMovie, getTvShow } from '@/api/tmdb'
 import { getLibraryEntries } from '@/data/library'
 import { getAllWatchedEpisodes } from '@/data/watchedEpisodes'
+import { normalizeReleaseStatus } from '@/domain/releaseStatus'
 
+import type { ReleaseStatus } from '@/domain/releaseStatus'
 import type { WatchedEpisode } from '@/types/episodes'
 import type { LibraryEntry, LibraryStatus } from '@/types/library'
 import type { MediaType } from '@/types/media'
@@ -18,6 +20,17 @@ interface LibrarySection {
   status: LibraryStatus
   title: string
   entries: LibraryEntry[]
+}
+
+interface MediaEnrichment {
+  releaseStatus: ReleaseStatus | null
+  totalEpisodeCount?: number
+}
+
+interface MediaRequest {
+  key: string
+  mediaType: MediaType
+  tmdbId: number
 }
 
 const MEDIA_FILTERS: { value: MediaFilter; label: string }[] = [
@@ -33,22 +46,23 @@ const SECTION_TITLES: Record<LibraryStatus, string> = {
 }
 
 const SECTION_ORDER: LibraryStatus[] = ['watching', 'planned', 'completed']
-const MAX_TV_REQUESTS = 3
+const MAX_DETAILS_REQUESTS = 3
 
 const activeType = ref<MediaFilter>('all')
 const sortOrder = ref<SortOrder>('title')
 const entries = ref<LibraryEntry[]>([])
 const watchedCounts = ref(new Map<number, number>())
 const totalEpisodeCounts = ref(new Map<number, number>())
+const releaseStatuses = ref(new Map<string, ReleaseStatus>())
 const watchedEpisodesLoaded = ref(false)
 const watchedEpisodesFailed = ref(false)
 const loading = ref(true)
 const error = ref<string | null>(null)
 
-const tvDetailsCache = new Map<number, Promise<number>>()
-const queuedTvIds = new Set<number>()
-const tvRequestQueue: number[] = []
-let activeTvRequests = 0
+const detailsCache = new Map<string, Promise<MediaEnrichment>>()
+const queuedMediaKeys = new Set<string>()
+const detailsRequestQueue: MediaRequest[] = []
+let activeDetailsRequests = 0
 let mounted = true
 
 const hasEntries = computed(() => entries.value.length > 0)
@@ -75,12 +89,12 @@ const visibleSections = computed<LibrarySection[]>(() =>
   })).filter((section) => section.entries.length > 0),
 )
 
-const watchingTvIds = computed(
-  () =>
-    visibleSections.value
-      .find((section) => section.status === 'watching')
-      ?.entries.filter((entry) => entry.mediaType === 'tv')
-      .map((entry) => entry.tmdbId) ?? [],
+const mediaRequests = computed<MediaRequest[]>(() =>
+  entries.value.map((entry) => ({
+    key: entry.key,
+    mediaType: entry.mediaType,
+    tmdbId: entry.tmdbId,
+  })),
 )
 
 function groupWatchedEpisodes(watchedEpisodes: WatchedEpisode[]) {
@@ -103,6 +117,12 @@ function setTotalEpisodeCount(tmdbId: number, count: number) {
   totalEpisodeCounts.value = nextCounts
 }
 
+function setReleaseStatus(key: string, status: ReleaseStatus) {
+  const nextStatuses = new Map(releaseStatuses.value)
+  nextStatuses.set(key, status)
+  releaseStatuses.value = nextStatuses
+}
+
 function getWatchedEpisodeCount(entry: LibraryEntry) {
   if (
     entry.mediaType !== 'tv' ||
@@ -116,63 +136,78 @@ function getWatchedEpisodeCount(entry: LibraryEntry) {
   return watchedCounts.value.get(entry.tmdbId) ?? 0
 }
 
-function drainTvRequestQueue() {
-  while (mounted && activeTvRequests < MAX_TV_REQUESTS && tvRequestQueue.length > 0) {
-    const tmdbId = tvRequestQueue.shift()
+function fetchMediaEnrichment(request: MediaRequest): Promise<MediaEnrichment> {
+  if (request.mediaType === 'movie') {
+    return getMovie(request.tmdbId).then((movie) => ({
+      releaseStatus: normalizeReleaseStatus('movie', movie.status),
+    }))
+  }
 
-    if (tmdbId === undefined) {
+  return getTvShow(request.tmdbId).then((show) => ({
+    releaseStatus: normalizeReleaseStatus('tv', show.status),
+    totalEpisodeCount: show.seasons
+      .filter((season) => season.seasonNumber > 0)
+      .reduce((total, season) => total + season.episodeCount, 0),
+  }))
+}
+
+function drainDetailsRequestQueue() {
+  while (
+    mounted &&
+    activeDetailsRequests < MAX_DETAILS_REQUESTS &&
+    detailsRequestQueue.length > 0
+  ) {
+    const mediaRequest = detailsRequestQueue.shift()
+
+    if (!mediaRequest) {
       return
     }
 
-    queuedTvIds.delete(tmdbId)
-    activeTvRequests += 1
+    queuedMediaKeys.delete(mediaRequest.key)
+    activeDetailsRequests += 1
 
-    let request = tvDetailsCache.get(tmdbId)
+    let detailsPromise = detailsCache.get(mediaRequest.key)
 
-    if (!request) {
-      request = getTvShow(tmdbId).then((show) =>
-        show.seasons
-          .filter((season) => season.seasonNumber > 0)
-          .reduce((total, season) => total + season.episodeCount, 0),
-      )
-      tvDetailsCache.set(tmdbId, request)
+    if (!detailsPromise) {
+      detailsPromise = fetchMediaEnrichment(mediaRequest)
+      detailsCache.set(mediaRequest.key, detailsPromise)
     }
 
-    void request
-      .then((totalEpisodeCount) => {
-        if (mounted) {
-          setTotalEpisodeCount(tmdbId, totalEpisodeCount)
+    void detailsPromise
+      .then((enrichment) => {
+        if (!mounted) {
+          return
+        }
+
+        if (enrichment.releaseStatus) {
+          setReleaseStatus(mediaRequest.key, enrichment.releaseStatus)
+        }
+
+        if (enrichment.totalEpisodeCount !== undefined) {
+          setTotalEpisodeCount(mediaRequest.tmdbId, enrichment.totalEpisodeCount)
         }
       })
       .catch((cause: unknown) => {
         console.error(cause)
       })
       .finally(() => {
-        activeTvRequests -= 1
-        drainTvRequestQueue()
+        activeDetailsRequests -= 1
+        drainDetailsRequestQueue()
       })
   }
 }
 
-function queueWatchingTvDetails() {
-  if (!watchedEpisodesLoaded.value || watchedEpisodesFailed.value) {
-    return
-  }
-
-  watchingTvIds.value.forEach((tmdbId) => {
-    if (
-      totalEpisodeCounts.value.has(tmdbId) ||
-      tvDetailsCache.has(tmdbId) ||
-      queuedTvIds.has(tmdbId)
-    ) {
+function queueMediaDetails() {
+  mediaRequests.value.forEach((mediaRequest) => {
+    if (detailsCache.has(mediaRequest.key) || queuedMediaKeys.has(mediaRequest.key)) {
       return
     }
 
-    queuedTvIds.add(tmdbId)
-    tvRequestQueue.push(tmdbId)
+    queuedMediaKeys.add(mediaRequest.key)
+    detailsRequestQueue.push(mediaRequest)
   })
 
-  drainTvRequestQueue()
+  drainDetailsRequestQueue()
 }
 
 async function loadLibrary() {
@@ -196,6 +231,7 @@ async function loadLibrary() {
   }
 
   loading.value = false
+  queueMediaDetails()
 
   const watchedResult = await watchedEpisodesPromise
 
@@ -211,21 +247,20 @@ async function loadLibrary() {
   }
 
   watchedEpisodesLoaded.value = true
-  queueWatchingTvDetails()
 }
 
 function resetMediaFilter() {
   activeType.value = 'all'
 }
 
-watch(watchingTvIds, queueWatchingTvDetails)
+watch(mediaRequests, queueMediaDetails)
 
 onMounted(loadLibrary)
 
 onBeforeUnmount(() => {
   mounted = false
-  tvRequestQueue.length = 0
-  queuedTvIds.clear()
+  detailsRequestQueue.length = 0
+  queuedMediaKeys.clear()
 })
 </script>
 
@@ -301,6 +336,7 @@ onBeforeUnmount(() => {
             :key="entry.key"
             :entry="entry"
             :show-media-type="activeType === 'all'"
+            :release-status="releaseStatuses.get(entry.key)"
             :watched-episode-count="getWatchedEpisodeCount(entry)"
             :total-episode-count="
               entry.mediaType === 'tv' && entry.status === 'watching'
