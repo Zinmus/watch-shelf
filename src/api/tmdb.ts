@@ -2,10 +2,12 @@ import type {
   DiscoverFilters,
   DiscoverSort,
   Genre,
-  MediaDetails,
   MediaItem,
   MediaType,
+  MovieDetails,
+  TvShowDetails,
 } from '@/types/media'
+import type { TvEpisode, TvSeasonDetails, TvSeasonSummary } from '@/types/tv'
 
 const BASE_URL = 'https://api.themoviedb.org/3'
 const ACCESS_TOKEN = import.meta.env.VITE_TMDB_ACCESS_TOKEN
@@ -55,6 +57,32 @@ interface TvShowDetailsResponse extends TvShowResponse {
 
   status: string
   genres: Genre[]
+  seasons: TvSeasonSummaryResponse[]
+}
+
+interface TvSeasonSummaryResponse {
+  id: number
+  name: string
+  air_date: string | null
+  episode_count: number
+  season_number: number
+}
+
+interface TvEpisodeResponse {
+  id: number
+  name: string
+  overview: string
+  air_date: string | null
+  episode_number: number
+  season_number: number
+  still_path: string | null
+}
+
+interface TvSeasonDetailsResponse {
+  id: number
+  name: string
+  season_number: number
+  episodes: TvEpisodeResponse[]
 }
 
 async function request<T>(
@@ -104,6 +132,28 @@ function normalizeTvShow(show: TvShowResponse): MediaItem {
 
     posterPath: show.poster_path,
     date: show.first_air_date,
+  }
+}
+
+function normalizeTvSeasonSummary(season: TvSeasonSummaryResponse): TvSeasonSummary {
+  return {
+    id: season.id,
+    name: season.name,
+    airDate: season.air_date,
+    episodeCount: season.episode_count,
+    seasonNumber: season.season_number,
+  }
+}
+
+function normalizeTvEpisode(episode: TvEpisodeResponse): TvEpisode {
+  return {
+    id: episode.id,
+    name: episode.name,
+    overview: episode.overview,
+    airDate: episode.air_date,
+    episodeNumber: episode.episode_number,
+    seasonNumber: episode.season_number,
+    stillPath: episode.still_path,
   }
 }
 
@@ -219,11 +269,12 @@ export async function searchTvShows(
   }
 }
 
-export async function getMovie(id: number): Promise<MediaDetails> {
+export async function getMovie(id: number): Promise<MovieDetails> {
   const movie = await request<MovieDetailsResponse>(`/movie/${id}`)
 
   return {
     ...normalizeMovie(movie),
+    mediaType: 'movie',
 
     backdropPath: movie.backdrop_path,
     status: movie.status,
@@ -231,14 +282,32 @@ export async function getMovie(id: number): Promise<MediaDetails> {
   }
 }
 
-export async function getTvShow(id: number): Promise<MediaDetails> {
+export async function getTvShow(id: number): Promise<TvShowDetails> {
   const show = await request<TvShowDetailsResponse>(`/tv/${id}`)
 
   return {
     ...normalizeTvShow(show),
+    mediaType: 'tv',
 
     backdropPath: show.backdrop_path,
     status: show.status,
     genres: show.genres,
+    seasons: show.seasons.map(normalizeTvSeasonSummary),
+  }
+}
+
+export async function getTvSeason(
+  showId: number,
+  seasonNumber: number,
+): Promise<TvSeasonDetails> {
+  const season = await request<TvSeasonDetailsResponse>(
+    `/tv/${showId}/season/${seasonNumber}`,
+  )
+
+  return {
+    id: season.id,
+    name: season.name,
+    seasonNumber: season.season_number,
+    episodes: season.episodes.map(normalizeTvEpisode),
   }
 }

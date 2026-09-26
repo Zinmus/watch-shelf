@@ -1,3 +1,5 @@
+import type { TvSeasonSummary } from '@/types/tv'
+
 export type MediaType = 'movie' | 'tv'
 
 export type DiscoverSort = 'popularity' | 'rating' | 'date'
@@ -24,9 +26,20 @@ export interface MediaItem {
   date: string
 }
 
-export interface MediaDetails extends MediaItem {
+interface MediaDetailsBase extends MediaItem {
   backdropPath: string | null
 
   status: string
   genres: Genre[]
 }
+
+export interface MovieDetails extends MediaDetailsBase {
+  mediaType: 'movie'
+}
+
+export interface TvShowDetails extends MediaDetailsBase {
+  mediaType: 'tv'
+  seasons: TvSeasonSummary[]
+}
+
+export type MediaDetails = MovieDetails | TvShowDetails
