@@ -36,7 +36,7 @@ const SECTION_ORDER: LibraryStatus[] = ['watching', 'planned', 'completed']
 const MAX_TV_REQUESTS = 3
 
 const activeType = ref<MediaFilter>('all')
-const sortOrder = ref<SortOrder>('updated')
+const sortOrder = ref<SortOrder>('title')
 const entries = ref<LibraryEntry[]>([])
 const watchedCounts = ref(new Map<number, number>())
 const totalEpisodeCounts = ref(new Map<number, number>())
@@ -75,11 +75,12 @@ const visibleSections = computed<LibrarySection[]>(() =>
   })).filter((section) => section.entries.length > 0),
 )
 
-const watchingTvIds = computed(() =>
-  visibleSections.value
-    .find((section) => section.status === 'watching')
-    ?.entries.filter((entry) => entry.mediaType === 'tv')
-    .map((entry) => entry.tmdbId) ?? [],
+const watchingTvIds = computed(
+  () =>
+    visibleSections.value
+      .find((section) => section.status === 'watching')
+      ?.entries.filter((entry) => entry.mediaType === 'tv')
+      .map((entry) => entry.tmdbId) ?? [],
 )
 
 function groupWatchedEpisodes(watchedEpisodes: WatchedEpisode[]) {
@@ -235,7 +236,10 @@ onBeforeUnmount(() => {
       <p class="mt-2 text-gray-600">Your saved movies, series, and viewing progress.</p>
 
       <div class="mt-6 flex flex-wrap items-end justify-between gap-4">
-        <div class="flex gap-1 rounded-lg bg-gray-100 p-1" aria-label="Filter library by media type">
+        <div
+          class="flex gap-1 rounded-lg bg-gray-100 p-1"
+          aria-label="Filter library by media type"
+        >
           <button
             v-for="filter in MEDIA_FILTERS"
             :key="filter.value"
@@ -268,9 +272,16 @@ onBeforeUnmount(() => {
 
     <p v-if="loading" class="py-12 text-center text-gray-500">Loading library...</p>
 
-    <div v-else-if="error" class="rounded-lg border border-red-100 bg-red-50 px-6 py-10 text-center">
+    <div
+      v-else-if="error"
+      class="rounded-lg border border-red-100 bg-red-50 px-6 py-10 text-center"
+    >
       <p class="text-red-700">{{ error }}</p>
-      <button type="button" class="mt-4 rounded-lg bg-black px-4 py-2 text-white" @click="loadLibrary">
+      <button
+        type="button"
+        class="mt-4 rounded-lg bg-black px-4 py-2 text-white"
+        @click="loadLibrary"
+      >
         Try again
       </button>
     </div>
@@ -282,7 +293,9 @@ onBeforeUnmount(() => {
           <span class="text-sm tabular-nums text-gray-500">{{ section.entries.length }}</span>
         </div>
 
-        <div class="divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div
+          class="divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 bg-white"
+        >
           <LibraryRow
             v-for="entry in section.entries"
             :key="entry.key"
