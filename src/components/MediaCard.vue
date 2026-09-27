@@ -13,8 +13,6 @@ interface MediaCardItem {
 const props = defineProps<{
   media: MediaCardItem
   libraryStatus?: LibraryStatus
-  tvSeasonCount?: number
-  tvLibraryPending?: boolean
 }>()
 
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500'
@@ -55,7 +53,7 @@ function getYear(date: string) {
         </div>
 
         <span
-          v-if="media.mediaType === 'movie' && props.libraryStatus"
+          v-if="props.libraryStatus"
           role="img"
           :aria-label="STATUS_LABELS[props.libraryStatus]"
           :title="STATUS_LABELS[props.libraryStatus]"
@@ -82,25 +80,6 @@ function getYear(date: string) {
             />
             <path v-else d="m5 12 4 4L19 6" />
           </svg>
-        </span>
-
-        <span
-          v-else-if="media.mediaType === 'tv' && (props.tvSeasonCount || props.tvLibraryPending)"
-          role="img"
-          :aria-label="
-            props.tvLibraryPending
-              ? 'Series in your library; season migration pending'
-              : `${props.tvSeasonCount} ${props.tvSeasonCount === 1 ? 'season' : 'seasons'} in your library`
-          "
-          :title="
-            props.tvLibraryPending
-              ? 'Season migration pending'
-              : `${props.tvSeasonCount} ${props.tvSeasonCount === 1 ? 'season' : 'seasons'} in library`
-          "
-          class="absolute top-2 right-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-violet-50 px-1.5 text-xs font-semibold text-violet-700 shadow-sm ring-1 ring-violet-600/25 ring-inset dark:bg-violet-950 dark:text-violet-300 dark:ring-violet-400/30"
-        >
-          <span v-if="props.tvLibraryPending" aria-hidden="true">•••</span>
-          <span v-else aria-hidden="true">{{ props.tvSeasonCount }}</span>
         </span>
       </div>
 

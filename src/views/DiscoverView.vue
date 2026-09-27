@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import MediaCard from '@/components/MediaCard.vue'
-import { getLegacyTvLibraryEntries, getLibraryEntries } from '@/data/library'
+import { getLibraryEntries } from '@/data/library'
 import {
   readDiscoverSession,
   writeDiscoverSession,
@@ -28,9 +28,7 @@ const filterType = ref<MediaType | null>(savedState?.filterType ?? null)
 
 const items = ref<MediaItem[]>([])
 const genres = ref<Genre[]>([])
-const movieLibraryStatuses = ref(new Map<number, LibraryStatus>())
-const tvSeasonLibraryCounts = ref(new Map<number, number>())
-const pendingLegacyTvShows = ref(new Set<number>())
+const libraryStatuses = ref(new Map<string, LibraryStatus>())
 
 const currentPage = ref(1)
 const hasMore = ref(true)
@@ -180,34 +178,12 @@ async function loadGenres() {
 
 async function loadLibraryStatuses() {
   try {
-    const [entries, legacyEntries] = await Promise.all([
-      getLibraryEntries(),
-      getLegacyTvLibraryEntries(),
-    ])
-    const movieStatuses = new Map<number, LibraryStatus>()
-    const seasonCounts = new Map<number, number>()
+    const entries = await getLibraryEntries()
 
-    for (const entry of entries) {
-      if (entry.mediaType === 'movie') {
-        movieStatuses.set(entry.tmdbId, entry.status)
-      } else {
-        seasonCounts.set(
-          entry.showTmdbId,
-          (seasonCounts.get(entry.showTmdbId) ?? 0) + 1,
-        )
-      }
-    }
-
-    movieLibraryStatuses.value = movieStatuses
-    tvSeasonLibraryCounts.value = seasonCounts
-    pendingLegacyTvShows.value = new Set(
-      legacyEntries.map((entry) => entry.showTmdbId),
-    )
+    libraryStatuses.value = new Map(entries.map((entry) => [entry.key, entry.status]))
   } catch (err) {
     console.error('Failed to load library statuses:', err)
-    movieLibraryStatuses.value = new Map()
-    tvSeasonLibraryCounts.value = new Map()
-    pendingLegacyTvShows.value = new Set()
+    libraryStatuses.value = new Map()
   }
 }
 
@@ -565,9 +541,7 @@ onBeforeUnmount(() => {
         v-for="item in items"
         :key="`${item.mediaType}-${item.id}`"
         :media="item"
-        :library-status="item.mediaType === 'movie' ? movieLibraryStatuses.get(item.id) : undefined"
-        :tv-season-count="item.mediaType === 'tv' ? tvSeasonLibraryCounts.get(item.id) : undefined"
-        :tv-library-pending="item.mediaType === 'tv' && pendingLegacyTvShows.has(item.id)"
+        :library-status="libraryStatuses.get(`${item.mediaType}:${item.id}`)"
       />
     </div>
 

@@ -13,10 +13,10 @@ WatchShelf is a personal movie and TV tracking application built with Vue. It co
 - Filter catalog results by genre and year, then sort by popularity, rating, or release date.
 - Continue browsing through infinite scrolling while stale requests are safely ignored when the active view changes.
 - View title details, including artwork, overview, genres, release year, media type, and release status.
-- Organize a personal library into Planned, Watching, and Completed sections. Movies are saved as titles; TV series are saved one main season at a time.
-- Filter the library by media type, sort it by title or most recent update, and scan movies and saved seasons in a compact row layout.
-- Track each TV season with an independent status and watched episode count, including increment, decrement, and direct-edit controls.
-- Clamp season progress when TMDB's current episode total changes without changing the user's chosen status.
+- Organize a personal library into Planned, Watching, and Completed sections. Movies use Planned and Completed; Watching and episode progress apply to TV series.
+- Filter the library by media type, sort it by title or most recent update, and scan titles in a compact row layout.
+- Track TV progress as a watched episode count, with increment, decrement, and direct-edit controls.
+- Reconcile TV progress and library status when TMDB's current episode total changes.
 - Show normalized TMDB release-status badges independently of the user's library status.
 - Restore the active Discover tab, filters, sort order, and search state within the browser session.
 - Switch between light and dark themes, with the saved preference taking priority over the system color scheme.
@@ -56,7 +56,7 @@ The frontend calls only WatchShelf's own API routes. `TMDB_ACCESS_TOKEN` is read
 
 ### TV progress model
 
-WatchShelf treats a TV show as a container and stores each main season as an independent library entity. Season totals come from TMDB's show-level season summaries, while Season 0 (Specials) is excluded. Library status and episode progress are independent: changing either one does not modify the other. A newly announced season starts outside the library and does not affect existing seasons.
+WatchShelf stores one sequential watched episode count per series. The total is derived from TMDB's season summaries, excluding Season 0 (Specials). Library status and episode progress are independent: changing either one does not modify the other. When the current total changes, only an out-of-range watched count is clamped; the user's chosen status remains unchanged.
 
 ## Getting Started
 
@@ -132,7 +132,7 @@ The Vite frontend and serverless API are designed to deploy together on Vercel. 
 
 - **Local-first persistence:** IndexedDB provides durable personal-library storage without authentication, a user service, or a database backend.
 - **Separate status concepts:** Planned, Watching, and Completed describe the user's relationship with a title; release badges describe TMDB's current production or release state.
-- **Season-level TV progress:** Each main season has its own status and sequential watched count, avoiding per-episode tracking while keeping newly announced seasons independent.
+- **Sequential TV progress:** A single watched count keeps progress editing and reconciliation simple while avoiding a larger per-episode data model.
 - **Server-side credentials:** A narrow Vercel API layer keeps the TMDB token out of the browser and centralizes validation, caching, timeouts, and safe error handling.
 - **Scoped browser state:** Discover controls use `sessionStorage`, theme preference uses `localStorage`, and library records use IndexedDB—each matching the intended lifetime and data shape.
 - **Composition over global state:** Focused composables, domain modules, and data-access functions provide shared behavior without an additional state-management dependency.

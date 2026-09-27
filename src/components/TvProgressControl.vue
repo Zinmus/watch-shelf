@@ -7,7 +7,6 @@ const props = defineProps<{
   modelValue: number
   total: number
   disabled?: boolean
-  accessibleLabel?: string
 }>()
 
 const emit = defineEmits<{
@@ -95,7 +94,7 @@ watch(normalizedValue, (value) => {
     <div class="flex items-center gap-1">
       <button
         type="button"
-        :aria-label="`Decrease ${accessibleLabel ?? 'watched episode count'}`"
+        aria-label="Decrease watched episode count"
         class="flex size-7 items-center justify-center rounded-md text-base text-gray-600 hover:bg-gray-100 hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
         :disabled="decrementDisabled"
         @click="decrement"
@@ -113,7 +112,7 @@ watch(normalizedValue, (value) => {
             step="1"
             :min="0"
             :max="total"
-            :aria-label="accessibleLabel ?? 'Watched episode count'"
+            aria-label="Watched episode count"
             class="w-11 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-right text-sm text-gray-950 tabular-nums focus:border-gray-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-gray-400"
             @blur="commitEdit()"
             @keydown.enter.prevent="commitEdit(true)"
@@ -126,7 +125,7 @@ watch(normalizedValue, (value) => {
           v-else
           ref="editButton"
           type="button"
-          :aria-label="`Edit ${accessibleLabel ?? 'watched episode count'}`"
+          aria-label="Edit watched episode count"
           class="rounded px-1 py-0.5 tabular-nums hover:bg-gray-100 hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-800 dark:hover:text-white"
           :disabled="disabled"
           @click="startEditing"
@@ -137,7 +136,7 @@ watch(normalizedValue, (value) => {
 
       <button
         type="button"
-        :aria-label="`Increase ${accessibleLabel ?? 'watched episode count'}`"
+        aria-label="Increase watched episode count"
         class="flex size-7 items-center justify-center rounded-md text-base text-gray-600 hover:bg-gray-100 hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
         :disabled="incrementDisabled"
         @click="increment"
