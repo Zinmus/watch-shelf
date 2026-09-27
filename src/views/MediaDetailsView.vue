@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import ReleaseStatusBadge from '@/components/ReleaseStatusBadge.vue'
 import TvProgressControl from '@/components/TvProgressControl.vue'
@@ -29,6 +29,7 @@ type StatusSelection = LibraryStatus | 'not-in-library'
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500'
 
 const route = useRoute()
+const router = useRouter()
 
 const media = ref<MediaDetails | null>(null)
 const libraryEntry = ref<LibraryEntry | null>(null)
@@ -85,6 +86,15 @@ function isMediaType(value: string): value is MediaType {
 
 function getYear(date: string) {
   return date ? date.slice(0, 4) : 'Unknown'
+}
+
+function goBack() {
+  if (typeof router.options.history.state.back === 'string') {
+    router.back()
+    return
+  }
+
+  void router.replace({ name: 'discover' })
 }
 
 function getEntryStatus(): StatusSelection {
@@ -423,9 +433,13 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
         </div>
 
         <div class="min-w-0">
-          <RouterLink to="/" class="mb-4 inline-block text-sm text-gray-500 hover:text-black dark:text-gray-400 dark:hover:text-white">
-            ← Back to Discover
-          </RouterLink>
+          <button
+            type="button"
+            class="mb-4 inline-block cursor-pointer text-sm text-gray-500 hover:text-black dark:text-gray-400 dark:hover:text-white"
+            @click="goBack"
+          >
+            &larr; Back
+          </button>
 
           <h1 class="text-3xl font-bold text-gray-950 dark:text-white sm:text-4xl">
             {{ media.title }}
