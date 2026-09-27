@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 
 import ReleaseStatusBadge from '@/components/ReleaseStatusBadge.vue'
 import TvProgressControl from '@/components/TvProgressControl.vue'
+import TvSeasonProgressList from '@/components/TvSeasonProgressList.vue'
 
 import { getMovie, getTvShow } from '@/api/tmdb'
 import {
@@ -15,6 +16,8 @@ import {
 import { normalizeReleaseStatus } from '@/domain/releaseStatus'
 import {
   clampWatchedEpisodeCount,
+  deriveSeasonProgress,
+  getGlobalProgressForSeason,
   getTotalMainEpisodeCount,
 } from '@/domain/tvProgress'
 
@@ -59,6 +62,12 @@ const totalMainEpisodeCount = computed(() =>
 )
 
 const watchedEpisodeCount = computed(() => libraryEntry.value?.watchedEpisodeCount ?? 0)
+
+const seasonProgress = computed(() =>
+  media.value?.mediaType === 'tv'
+    ? deriveSeasonProgress(watchedEpisodeCount.value, media.value.seasons)
+    : [],
+)
 
 const releaseStatus = computed(() =>
   media.value ? normalizeReleaseStatus(media.value.mediaType, media.value.status) : null,
@@ -321,6 +330,20 @@ async function updateProgress(requestedCount: number) {
   }
 }
 
+function updateSeasonProgress(seasonNumber: number, requestedCount: number) {
+  if (media.value?.mediaType !== 'tv') {
+    return
+  }
+
+  void updateProgress(
+    getGlobalProgressForSeason(
+      media.value.seasons,
+      seasonNumber,
+      requestedCount,
+    ),
+  )
+}
+
 watch(() => [route.params.type, route.params.id], loadMedia, {
   immediate: true,
 })
@@ -372,12 +395,19 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
                 </select>
               </label>
 
-              <div v-if="showTvProgress" class="pt-2">
+              <div v-if="showTvProgress" class="space-y-4 pt-2">
                 <TvProgressControl
                   :model-value="watchedEpisodeCount"
                   :total="totalMainEpisodeCount"
                   :disabled="savingLibrary"
                   @commit="updateProgress"
+                />
+
+                <TvSeasonProgressList
+                  v-if="seasonProgress.length > 0"
+                  :seasons="seasonProgress"
+                  :disabled="savingLibrary"
+                  @commit="updateSeasonProgress"
                 />
               </div>
 
