@@ -6,7 +6,7 @@ import LibraryRow from '@/components/LibraryRow.vue'
 import { getMovie, getTvShow } from '@/api/tmdb'
 import { getLibraryEntries, updateTvLibraryState } from '@/data/library'
 import { normalizeReleaseStatus } from '@/domain/releaseStatus'
-import { getTotalMainEpisodeCount, reconcileTvLibraryState } from '@/domain/tvProgress'
+import { clampWatchedEpisodeCount, getTotalMainEpisodeCount } from '@/domain/tvProgress'
 
 import type { ReleaseStatus } from '@/domain/releaseStatus'
 import type { LibraryEntry, LibraryStatus } from '@/types/library'
@@ -106,7 +106,7 @@ function setReleaseStatus(key: string, status: ReleaseStatus) {
   releaseStatuses.value = nextStatuses
 }
 
-async function reconcileTvEntry(tmdbId: number, totalEpisodeCount: number) {
+async function normalizeTvEntryProgress(tmdbId: number, totalEpisodeCount: number) {
   const entry = entries.value.find(
     (candidate) => candidate.mediaType === 'tv' && candidate.tmdbId === tmdbId,
   )
@@ -115,23 +115,19 @@ async function reconcileTvEntry(tmdbId: number, totalEpisodeCount: number) {
     return
   }
 
-  const reconciledState = reconcileTvLibraryState(
-    entry.status,
+  const normalizedCount = clampWatchedEpisodeCount(
     entry.watchedEpisodeCount ?? 0,
     totalEpisodeCount,
   )
 
-  if (
-    reconciledState.status === entry.status &&
-    reconciledState.watchedEpisodeCount === (entry.watchedEpisodeCount ?? 0)
-  ) {
+  if (normalizedCount === (entry.watchedEpisodeCount ?? 0)) {
     return
   }
 
   const updatedEntry = await updateTvLibraryState(
     tmdbId,
-    reconciledState.status,
-    reconciledState.watchedEpisodeCount,
+    entry.status,
+    normalizedCount,
   )
 
   if (!mounted) {
@@ -190,7 +186,7 @@ function drainDetailsRequestQueue() {
 
         if (enrichment.totalEpisodeCount !== undefined) {
           setTotalEpisodeCount(mediaRequest.tmdbId, enrichment.totalEpisodeCount)
-          return reconcileTvEntry(mediaRequest.tmdbId, enrichment.totalEpisodeCount)
+          return normalizeTvEntryProgress(mediaRequest.tmdbId, enrichment.totalEpisodeCount)
         }
       })
       .catch((cause: unknown) => {

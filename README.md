@@ -56,7 +56,7 @@ The frontend calls only WatchShelf's own API routes. `TMDB_ACCESS_TOKEN` is read
 
 ### TV progress model
 
-WatchShelf stores one sequential watched episode count per series. The total is derived from TMDB's season summaries, excluding Season 0 (Specials). Planned series can retain partial progress. When the current total changes, the stored count is clamped and the library status is reconciled: reaching the total marks a series Completed, while a previously completed series with newly added episodes returns to Planned.
+WatchShelf stores one sequential watched episode count per series. The total is derived from TMDB's season summaries, excluding Season 0 (Specials). Library status and episode progress are independent: changing either one does not modify the other. When the current total changes, only an out-of-range watched count is clamped; the user's chosen status remains unchanged.
 
 ## Getting Started
 

@@ -14,11 +14,8 @@ import {
 } from '@/data/library'
 import { normalizeReleaseStatus } from '@/domain/releaseStatus'
 import {
-  applyTvProgressChange,
-  applyTvStatusSelection,
-  canSetTvShowCompleted,
+  clampWatchedEpisodeCount,
   getTotalMainEpisodeCount,
-  reconcileTvLibraryState,
 } from '@/domain/tvProgress'
 
 import type { LibraryEntry, LibraryStatus } from '@/types/library'
@@ -67,12 +64,6 @@ const releaseStatus = computed(() =>
   media.value ? normalizeReleaseStatus(media.value.mediaType, media.value.status) : null,
 )
 
-const tvCanComplete = computed(
-  () =>
-    media.value?.mediaType === 'tv' &&
-    canSetTvShowCompleted(totalMainEpisodeCount.value),
-)
-
 const showTvProgress = computed(
   () => media.value?.mediaType === 'tv' && libraryEntry.value?.mediaType === 'tv',
 )
@@ -105,21 +96,17 @@ function getLibraryEntryInput() {
   }
 }
 
-async function reconcileTvState(version: number) {
+async function normalizeTvProgress(version: number) {
   if (media.value?.mediaType !== 'tv' || libraryEntry.value?.mediaType !== 'tv') {
     return
   }
 
-  const reconciledState = reconcileTvLibraryState(
-    libraryEntry.value.status,
+  const normalizedCount = clampWatchedEpisodeCount(
     watchedEpisodeCount.value,
     totalMainEpisodeCount.value,
   )
 
-  if (
-    reconciledState.watchedEpisodeCount === watchedEpisodeCount.value &&
-    reconciledState.status === libraryEntry.value.status
-  ) {
+  if (normalizedCount === watchedEpisodeCount.value) {
     return
   }
 
@@ -127,8 +114,8 @@ async function reconcileTvState(version: number) {
     savingLibrary.value = true
     const updatedEntry = await updateTvLibraryState(
       media.value.id,
-      reconciledState.status,
-      reconciledState.watchedEpisodeCount,
+      libraryEntry.value.status,
+      normalizedCount,
     )
 
     if (version !== loadVersion) {
@@ -136,12 +123,11 @@ async function reconcileTvState(version: number) {
     }
 
     libraryEntry.value = updatedEntry
-    selectedStatus.value = reconciledState.status
-    libraryNotice.value = 'Progress and status were updated to match current series data.'
+    libraryNotice.value = 'Progress was updated to match current series data.'
   } catch (cause) {
     if (version === loadVersion) {
       console.error(cause)
-      libraryError.value = 'Failed to reconcile this title\'s library state.'
+      libraryError.value = 'Failed to normalize this title\'s episode progress.'
     }
   } finally {
     if (version === loadVersion) {
@@ -237,7 +223,7 @@ async function loadMedia() {
     if (type === 'movie') {
       await reconcileMovieState(version)
     } else {
-      await reconcileTvState(version)
+      await normalizeTvProgress(version)
     }
   }
 }
@@ -269,12 +255,6 @@ async function handleStatusChange() {
     }
   }
 
-  if (nextStatus === 'completed' && media.value.mediaType === 'tv' && !tvCanComplete.value) {
-    libraryError.value = 'A series can only be completed when its episode total is known.'
-    selectedStatus.value = previousStatus
-    return
-  }
-
   try {
     savingLibrary.value = true
     libraryError.value = null
@@ -287,25 +267,16 @@ async function handleStatusChange() {
     }
 
     if (media.value.mediaType === 'tv' && libraryEntry.value) {
-      const nextState = applyTvStatusSelection(
-        nextStatus,
-        watchedEpisodeCount.value,
-        totalMainEpisodeCount.value,
-      )
       libraryEntry.value = await updateTvLibraryState(
         media.value.id,
-        nextState.status,
-        nextState.watchedEpisodeCount,
+        nextStatus,
+        watchedEpisodeCount.value,
       )
     } else {
-      const initialEpisodeCount = media.value.mediaType === 'tv'
-        ? applyTvStatusSelection(nextStatus, 0, totalMainEpisodeCount.value)
-            .watchedEpisodeCount
-        : 0
       libraryEntry.value = await saveLibraryEntry(
         getLibraryEntryInput(),
         nextStatus,
-        initialEpisodeCount,
+        0,
       )
     }
 
@@ -324,18 +295,12 @@ async function updateProgress(requestedCount: number) {
     return
   }
 
-  const previousStatus = libraryEntry.value.status
-  const nextState = applyTvProgressChange(
-    previousStatus,
-    watchedEpisodeCount.value,
+  const nextCount = clampWatchedEpisodeCount(
     requestedCount,
     totalMainEpisodeCount.value,
   )
 
-  if (
-    nextState.watchedEpisodeCount === watchedEpisodeCount.value &&
-    nextState.status === previousStatus
-  ) {
+  if (nextCount === watchedEpisodeCount.value) {
     return
   }
 
@@ -345,14 +310,9 @@ async function updateProgress(requestedCount: number) {
     libraryNotice.value = null
     libraryEntry.value = await updateTvLibraryState(
       media.value.id,
-      nextState.status,
-      nextState.watchedEpisodeCount,
+      libraryEntry.value.status,
+      nextCount,
     )
-    selectedStatus.value = nextState.status
-
-    if (nextState.status !== previousStatus) {
-      libraryNotice.value = `Status changed to ${nextState.status}.`
-    }
   } catch (cause) {
     console.error(cause)
     libraryError.value = 'Failed to update episode progress.'
@@ -406,11 +366,6 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
                     v-for="option in statusOptions"
                     :key="option.value"
                     :value="option.value"
-                    :disabled="
-                      media.mediaType === 'tv' &&
-                      option.value === 'completed' &&
-                      !tvCanComplete
-                    "
                   >
                     {{ option.label }}
                   </option>
