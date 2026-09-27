@@ -36,7 +36,6 @@ function getSeasonLabel(season: SeasonProgress) {
           :model-value="season.watchedEpisodeCount"
           :total="season.episodeCount"
           :label="getSeasonLabel(season)"
-          :completed="season.state === 'completed'"
           :active="season.state === 'current'"
           :disabled="disabled || season.episodeCount === 0"
           @commit="emit('commit', season.seasonNumber, $event)"

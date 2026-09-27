@@ -8,7 +8,6 @@ const props = defineProps<{
   total: number
   disabled?: boolean
   label?: string
-  completed?: boolean
   active?: boolean
 }>()
 
@@ -100,18 +99,11 @@ watch(normalizedValue, (value) => {
     <span
       class="flex min-w-0 items-center gap-1.5 truncate"
       :class="
-        active || completed
+        active
           ? 'text-gray-800 dark:text-gray-200'
           : 'text-gray-600 dark:text-gray-400'
       "
     >
-      <span
-        v-if="completed"
-        aria-label="Completed"
-        class="text-emerald-600 dark:text-emerald-400"
-      >
-        &#10003;
-      </span>
       <span class="truncate">{{ label ?? 'Episodes' }}</span>
     </span>
     <div class="flex items-center gap-1">
