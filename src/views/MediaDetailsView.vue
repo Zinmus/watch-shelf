@@ -3,69 +3,63 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import ReleaseStatusBadge from '@/components/ReleaseStatusBadge.vue'
-import TvProgressControl from '@/components/TvProgressControl.vue'
+import TvSeasonLibraryControl from '@/components/TvSeasonLibraryControl.vue'
 
 import { getMovie, getTvShow } from '@/api/tmdb'
 import {
-  getLibraryEntry,
-  removeLibraryEntry,
-  saveLibraryEntry,
-  updateTvLibraryState,
+  commitLegacyTvMigration,
+  getLegacyTvLibraryEntry,
+  getMovieLibraryEntry,
+  getTvSeasonLibraryEntries,
+  removeMovieLibraryEntry,
+  removeTvSeasonLibraryEntry,
+  saveMovieLibraryEntry,
+  saveTvSeasonLibraryEntry,
 } from '@/data/library'
+import { createLegacyTvMigrationPlan, getMainSeasonSummaries } from '@/domain/legacyTvMigration'
 import { normalizeReleaseStatus } from '@/domain/releaseStatus'
-import {
-  clampWatchedEpisodeCount,
-  getTotalMainEpisodeCount,
-} from '@/domain/tvProgress'
+import { clampWatchedEpisodeCount } from '@/domain/tvProgress'
 
-import type { LibraryEntry, LibraryStatus } from '@/types/library'
-import type { MediaDetails, MediaType } from '@/types/media'
+import type { SeasonStatusSelection } from '@/components/TvSeasonLibraryControl.vue'
+import type {
+  MovieLibraryEntry,
+  MovieLibraryStatus,
+  TvSeasonLibraryEntry,
+} from '@/types/library'
+import type { MediaDetails, MediaType, MovieDetails, TvShowDetails } from '@/types/media'
+import type { TvSeasonSummary } from '@/types/tv'
 
-type StatusSelection = LibraryStatus | 'not-in-library'
+type MovieStatusSelection = MovieLibraryStatus | 'not-in-library'
 
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500'
 
 const route = useRoute()
 
 const media = ref<MediaDetails | null>(null)
-const libraryEntry = ref<LibraryEntry | null>(null)
-const selectedStatus = ref<StatusSelection>('not-in-library')
+const movieLibraryEntry = ref<MovieLibraryEntry | null>(null)
+const tvSeasonEntries = ref(new Map<number, TvSeasonLibraryEntry>())
+const selectedMovieStatus = ref<MovieStatusSelection>('not-in-library')
 const loading = ref(false)
 const libraryLoading = ref(false)
-const savingLibrary = ref(false)
+const savingMovie = ref(false)
+const savingSeasons = ref(new Set<number>())
+const legacyMigrationPending = ref(false)
 const error = ref<string | null>(null)
 const libraryError = ref<string | null>(null)
 const libraryNotice = ref<string | null>(null)
 
-const MOVIE_STATUS_OPTIONS: { value: StatusSelection; label: string }[] = [
+const MOVIE_STATUS_OPTIONS: { value: MovieStatusSelection; label: string }[] = [
   { value: 'not-in-library', label: 'Not in library' },
   { value: 'planned', label: 'Planned' },
   { value: 'completed', label: 'Completed' },
 ]
 
-const TV_STATUS_OPTIONS: { value: StatusSelection; label: string }[] = [
-  { value: 'not-in-library', label: 'Not in library' },
-  { value: 'planned', label: 'Planned' },
-  { value: 'watching', label: 'Watching' },
-  { value: 'completed', label: 'Completed' },
-]
-
-const statusOptions = computed(() =>
-  media.value?.mediaType === 'movie' ? MOVIE_STATUS_OPTIONS : TV_STATUS_OPTIONS,
+const mainSeasons = computed(() =>
+  media.value?.mediaType === 'tv' ? getMainSeasonSummaries(media.value.seasons) : [],
 )
-
-const totalMainEpisodeCount = computed(() =>
-  media.value?.mediaType === 'tv' ? getTotalMainEpisodeCount(media.value.seasons) : 0,
-)
-
-const watchedEpisodeCount = computed(() => libraryEntry.value?.watchedEpisodeCount ?? 0)
 
 const releaseStatus = computed(() =>
   media.value ? normalizeReleaseStatus(media.value.mediaType, media.value.status) : null,
-)
-
-const showTvProgress = computed(
-  () => media.value?.mediaType === 'tv' && libraryEntry.value?.mediaType === 'tv',
 )
 
 let loadVersion = 0
@@ -78,43 +72,74 @@ function getYear(date: string) {
   return date ? date.slice(0, 4) : 'Unknown'
 }
 
-function getEntryStatus(): StatusSelection {
-  return libraryEntry.value?.status ?? 'not-in-library'
+function setTvSeasonEntries(entries: TvSeasonLibraryEntry[]) {
+  tvSeasonEntries.value = new Map(entries.map((entry) => [entry.seasonNumber, entry]))
 }
 
-function getLibraryEntryInput() {
-  if (!media.value) {
-    throw new Error('Media details are unavailable.')
+function replaceTvSeasonEntry(entry: TvSeasonLibraryEntry) {
+  const nextEntries = new Map(tvSeasonEntries.value)
+  nextEntries.set(entry.seasonNumber, entry)
+  tvSeasonEntries.value = nextEntries
+}
+
+function deleteTvSeasonEntry(seasonNumber: number) {
+  const nextEntries = new Map(tvSeasonEntries.value)
+  nextEntries.delete(seasonNumber)
+  tvSeasonEntries.value = nextEntries
+}
+
+function setSeasonSaving(seasonNumber: number, saving: boolean) {
+  const nextSavingSeasons = new Set(savingSeasons.value)
+
+  if (saving) {
+    nextSavingSeasons.add(seasonNumber)
+  } else {
+    nextSavingSeasons.delete(seasonNumber)
   }
 
+  savingSeasons.value = nextSavingSeasons
+}
+
+function getMovieEntryInput(movie: MovieDetails) {
   return {
-    tmdbId: media.value.id,
-    mediaType: media.value.mediaType,
-    title: media.value.title,
-    posterPath: media.value.posterPath,
-    date: media.value.date,
+    tmdbId: movie.id,
+    title: movie.title,
+    posterPath: movie.posterPath,
+    date: movie.date,
   }
 }
 
-async function normalizeTvProgress(version: number) {
-  if (media.value?.mediaType !== 'tv' || libraryEntry.value?.mediaType !== 'tv') {
-    return
+function getTvSeasonEntryInput(show: TvShowDetails, season: TvSeasonSummary) {
+  return {
+    showTmdbId: show.id,
+    seasonNumber: season.seasonNumber,
+    showTitle: show.title,
+    seasonName: season.name || undefined,
   }
+}
 
-  const normalizedCount = clampWatchedEpisodeCount(
-    watchedEpisodeCount.value,
-    totalMainEpisodeCount.value,
-  )
+async function normalizeTvSeasonProgress(show: TvShowDetails, version: number) {
+  let normalizedAnyEntry = false
 
-  if (normalizedCount === watchedEpisodeCount.value) {
-    return
-  }
+  for (const season of getMainSeasonSummaries(show.seasons)) {
+    const entry = tvSeasonEntries.value.get(season.seasonNumber)
 
-  try {
-    savingLibrary.value = true
-    const updatedEntry = await updateTvLibraryState(
-      media.value.id,
-      libraryEntry.value.status,
+    if (!entry) {
+      continue
+    }
+
+    const normalizedCount = clampWatchedEpisodeCount(
+      entry.watchedEpisodeCount,
+      season.episodeCount,
+    )
+
+    if (normalizedCount === entry.watchedEpisodeCount) {
+      continue
+    }
+
+    const updatedEntry = await saveTvSeasonLibraryEntry(
+      getTvSeasonEntryInput(show, season),
+      entry.status,
       normalizedCount,
     )
 
@@ -122,35 +147,78 @@ async function normalizeTvProgress(version: number) {
       return
     }
 
-    libraryEntry.value = updatedEntry
-    libraryNotice.value = 'Progress was updated to match current series data.'
-  } catch (cause) {
-    if (version === loadVersion) {
-      console.error(cause)
-      libraryError.value = 'Failed to normalize this title\'s episode progress.'
-    }
-  } finally {
-    if (version === loadVersion) {
-      savingLibrary.value = false
-    }
+    replaceTvSeasonEntry(updatedEntry)
+    normalizedAnyEntry = true
+  }
+
+  if (normalizedAnyEntry) {
+    libraryNotice.value = 'Season progress was updated to match current series data.'
   }
 }
 
-async function reconcileMovieState(version: number) {
-  if (media.value?.mediaType !== 'movie' || libraryEntry.value?.status !== 'watching') {
+async function migrateLegacyTvEntry(
+  show: TvShowDetails,
+  version: number,
+) {
+  const legacyEntry = await getLegacyTvLibraryEntry(show.id)
+
+  if (version !== loadVersion || !legacyEntry) {
     return
   }
 
-  try {
-    savingLibrary.value = true
-    const updatedEntry = await saveLibraryEntry(getLibraryEntryInput(), 'planned')
+  legacyMigrationPending.value = true
+  const migrationPlan = createLegacyTvMigrationPlan(legacyEntry, show.title, show.seasons)
+
+  if (!migrationPlan.ok) {
+    libraryError.value =
+      migrationPlan.reason === 'progress-exceeds-known-total'
+        ? 'Saved series progress exceeds the current episode total. The original data was retained.'
+        : 'Saved series data could not be converted because no main seasons are available. The original data was retained.'
+    return
+  }
+
+  const result = await commitLegacyTvMigration(legacyEntry, migrationPlan.entries)
+
+  if (version !== loadVersion) {
+    return
+  }
+
+  if (result === 'migrated' || result === 'already-migrated') {
+    const migratedEntries = await getTvSeasonLibraryEntries(show.id)
 
     if (version !== loadVersion) {
       return
     }
 
-    libraryEntry.value = updatedEntry
-    selectedStatus.value = updatedEntry.status
+    setTvSeasonEntries(migratedEntries)
+    legacyMigrationPending.value = false
+    libraryNotice.value = 'Existing series progress was converted to season progress.'
+    return
+  }
+
+  libraryError.value =
+    result === 'conflict'
+      ? 'Saved series data conflicts with an existing season entry. The original data was retained.'
+      : 'Saved series data changed during conversion. The original data was retained.'
+}
+
+async function reconcileMovieState(movie: MovieDetails, version: number) {
+  const legacyStatus = (movieLibraryEntry.value as { status?: string } | null)?.status
+
+  if (legacyStatus !== 'watching') {
+    return
+  }
+
+  try {
+    savingMovie.value = true
+    const updatedEntry = await saveMovieLibraryEntry(getMovieEntryInput(movie), 'planned')
+
+    if (version !== loadVersion) {
+      return
+    }
+
+    movieLibraryEntry.value = updatedEntry
+    selectedMovieStatus.value = updatedEntry.status
     libraryNotice.value = 'Status was updated to Planned for this movie.'
   } catch (cause) {
     if (version === loadVersion) {
@@ -159,7 +227,77 @@ async function reconcileMovieState(version: number) {
     }
   } finally {
     if (version === loadVersion) {
-      savingLibrary.value = false
+      savingMovie.value = false
+    }
+  }
+}
+
+async function loadMovie(id: number, version: number) {
+  const [detailsResult, libraryResult] = await Promise.allSettled([
+    getMovie(id),
+    getMovieLibraryEntry(id),
+  ])
+
+  if (version !== loadVersion) return
+
+  if (detailsResult.status === 'rejected') {
+    console.error(detailsResult.reason)
+    error.value = 'Failed to load media details.'
+  } else {
+    media.value = detailsResult.value
+  }
+
+  if (libraryResult.status === 'rejected') {
+    console.error(libraryResult.reason)
+    libraryError.value = 'Failed to load this title\'s library state.'
+  } else {
+    movieLibraryEntry.value = libraryResult.value ?? null
+    selectedMovieStatus.value =
+      (libraryResult.value as { status?: string } | undefined)?.status === 'watching'
+        ? 'planned'
+        : (libraryResult.value?.status ?? 'not-in-library')
+  }
+
+  if (detailsResult.status === 'fulfilled' && libraryResult.status === 'fulfilled') {
+    await reconcileMovieState(detailsResult.value, version)
+  }
+}
+
+async function loadTvShow(id: number, version: number) {
+  const [detailsResult, libraryResult] = await Promise.allSettled([
+    getTvShow(id),
+    getTvSeasonLibraryEntries(id),
+  ])
+
+  if (version !== loadVersion) return
+
+  if (detailsResult.status === 'rejected') {
+    console.error(detailsResult.reason)
+    error.value = 'Failed to load media details.'
+  } else {
+    media.value = detailsResult.value
+  }
+
+  if (libraryResult.status === 'rejected') {
+    console.error(libraryResult.reason)
+    libraryError.value = 'Failed to load this title\'s library state.'
+  } else {
+    setTvSeasonEntries(libraryResult.value)
+  }
+
+  if (detailsResult.status === 'fulfilled' && libraryResult.status === 'fulfilled') {
+    try {
+      await migrateLegacyTvEntry(detailsResult.value, version)
+
+      if (version === loadVersion && !legacyMigrationPending.value) {
+        await normalizeTvSeasonProgress(detailsResult.value, version)
+      }
+    } catch (cause) {
+      if (version === loadVersion) {
+        console.error(cause)
+        legacyMigrationPending.value = true
+        libraryError.value = 'Saved series data could not be converted. The original data was retained.'
+      }
     }
   }
 }
@@ -170,14 +308,15 @@ async function loadMedia() {
   const id = Number(route.params.id)
 
   media.value = null
-  libraryEntry.value = null
-  selectedStatus.value = 'not-in-library'
+  movieLibraryEntry.value = null
+  tvSeasonEntries.value = new Map()
+  selectedMovieStatus.value = 'not-in-library'
   error.value = null
   libraryError.value = null
   libraryNotice.value = null
-  loading.value = false
-  libraryLoading.value = false
-  savingLibrary.value = false
+  legacyMigrationPending.value = false
+  savingMovie.value = false
+  savingSeasons.value = new Set()
 
   if (!isMediaType(type) || !Number.isFinite(id)) {
     error.value = 'Invalid media URL.'
@@ -187,143 +326,132 @@ async function loadMedia() {
   loading.value = true
   libraryLoading.value = true
 
-  const detailsPromise = type === 'movie' ? getMovie(id) : getTvShow(id)
-  const libraryPromise = getLibraryEntry(type, id)
-  const [detailsResult, libraryResult] = await Promise.allSettled([
-    detailsPromise,
-    libraryPromise,
-  ])
-
-  if (version !== loadVersion) {
-    return
-  }
-
-  if (detailsResult.status === 'fulfilled') {
-    media.value = detailsResult.value
+  if (type === 'movie') {
+    await loadMovie(id, version)
   } else {
-    console.error(detailsResult.reason)
-    error.value = 'Failed to load media details.'
+    await loadTvShow(id, version)
   }
 
-  if (libraryResult.status === 'fulfilled') {
-    libraryEntry.value = libraryResult.value ?? null
-    selectedStatus.value =
-      type === 'movie' && libraryResult.value?.status === 'watching'
-        ? 'planned'
-        : (libraryResult.value?.status ?? 'not-in-library')
-  } else {
-    console.error(libraryResult.reason)
-    libraryError.value = 'Failed to load this title\'s library state.'
-  }
-
-  loading.value = false
-  libraryLoading.value = false
-
-  if (detailsResult.status === 'fulfilled' && libraryResult.status === 'fulfilled') {
-    if (type === 'movie') {
-      await reconcileMovieState(version)
-    } else {
-      await normalizeTvProgress(version)
-    }
+  if (version === loadVersion) {
+    loading.value = false
+    libraryLoading.value = false
   }
 }
 
-async function handleStatusChange() {
-  if (!media.value) {
-    return
-  }
+async function handleMovieStatusChange() {
+  if (media.value?.mediaType !== 'movie') return
 
-  const previousStatus = getEntryStatus()
-  const nextStatus = selectedStatus.value
+  const movie = media.value
+  const previousStatus = movieLibraryEntry.value?.status ?? 'not-in-library'
+  const nextStatus = selectedMovieStatus.value
 
-  if (nextStatus === previousStatus) {
-    return
-  }
-
-  if (nextStatus === 'not-in-library') {
-    if (!libraryEntry.value) {
-      return
-    }
-
-    if (
-      media.value.mediaType === 'tv' &&
-      watchedEpisodeCount.value > 0 &&
-      !window.confirm('Remove this title and delete its episode progress?')
-    ) {
-      selectedStatus.value = previousStatus
-      return
-    }
-  }
+  if (nextStatus === previousStatus) return
 
   try {
-    savingLibrary.value = true
+    savingMovie.value = true
     libraryError.value = null
     libraryNotice.value = null
 
     if (nextStatus === 'not-in-library') {
-      await removeLibraryEntry(media.value.mediaType, media.value.id)
-      libraryEntry.value = null
+      await removeMovieLibraryEntry(movie.id)
+      movieLibraryEntry.value = null
       return
     }
 
-    if (media.value.mediaType === 'tv' && libraryEntry.value) {
-      libraryEntry.value = await updateTvLibraryState(
-        media.value.id,
-        nextStatus,
-        watchedEpisodeCount.value,
-      )
-    } else {
-      libraryEntry.value = await saveLibraryEntry(
-        getLibraryEntryInput(),
-        nextStatus,
-        0,
-      )
-    }
-
-    selectedStatus.value = libraryEntry.value.status
+    movieLibraryEntry.value = await saveMovieLibraryEntry(
+      getMovieEntryInput(movie),
+      nextStatus,
+    )
+    selectedMovieStatus.value = movieLibraryEntry.value.status
   } catch (cause) {
     console.error(cause)
     libraryError.value = 'Failed to update this title\'s library state.'
-    selectedStatus.value = previousStatus
+    selectedMovieStatus.value = previousStatus
   } finally {
-    savingLibrary.value = false
+    savingMovie.value = false
   }
 }
 
-async function updateProgress(requestedCount: number) {
-  if (media.value?.mediaType !== 'tv' || libraryEntry.value?.mediaType !== 'tv') {
-    return
-  }
+async function handleSeasonStatusChange(
+  season: TvSeasonSummary,
+  nextStatus: SeasonStatusSelection,
+) {
+  if (media.value?.mediaType !== 'tv' || legacyMigrationPending.value) return
 
-  const nextCount = clampWatchedEpisodeCount(
-    requestedCount,
-    totalMainEpisodeCount.value,
-  )
+  const show = media.value
+  const existingEntry = tvSeasonEntries.value.get(season.seasonNumber)
+  const previousStatus = existingEntry?.status ?? 'not-in-library'
 
-  if (nextCount === watchedEpisodeCount.value) {
+  if (nextStatus === previousStatus) return
+
+  if (
+    nextStatus === 'not-in-library' &&
+    existingEntry &&
+    existingEntry.watchedEpisodeCount > 0 &&
+    !window.confirm(`Remove ${season.name || `Season ${season.seasonNumber}`} and delete its progress?`)
+  ) {
     return
   }
 
   try {
-    savingLibrary.value = true
+    setSeasonSaving(season.seasonNumber, true)
     libraryError.value = null
     libraryNotice.value = null
-    libraryEntry.value = await updateTvLibraryState(
-      media.value.id,
-      libraryEntry.value.status,
-      nextCount,
+
+    if (nextStatus === 'not-in-library') {
+      await removeTvSeasonLibraryEntry(show.id, season.seasonNumber)
+      deleteTvSeasonEntry(season.seasonNumber)
+      return
+    }
+
+    const updatedEntry = await saveTvSeasonLibraryEntry(
+      getTvSeasonEntryInput(show, season),
+      nextStatus,
+      existingEntry?.watchedEpisodeCount ?? 0,
     )
+    replaceTvSeasonEntry(updatedEntry)
   } catch (cause) {
     console.error(cause)
-    libraryError.value = 'Failed to update episode progress.'
+    libraryError.value = `Failed to update ${season.name || `Season ${season.seasonNumber}`}.`
   } finally {
-    savingLibrary.value = false
+    setSeasonSaving(season.seasonNumber, false)
   }
 }
 
-watch(() => [route.params.type, route.params.id], loadMedia, {
-  immediate: true,
-})
+async function updateSeasonProgress(
+  season: TvSeasonSummary,
+  requestedCount: number,
+) {
+  if (media.value?.mediaType !== 'tv' || legacyMigrationPending.value) return
+
+  const show = media.value
+  const entry = tvSeasonEntries.value.get(season.seasonNumber)
+
+  if (!entry) return
+
+  const nextCount = clampWatchedEpisodeCount(requestedCount, season.episodeCount)
+
+  if (nextCount === entry.watchedEpisodeCount) return
+
+  try {
+    setSeasonSaving(season.seasonNumber, true)
+    libraryError.value = null
+    libraryNotice.value = null
+    const updatedEntry = await saveTvSeasonLibraryEntry(
+      getTvSeasonEntryInput(show, season),
+      entry.status,
+      nextCount,
+    )
+    replaceTvSeasonEntry(updatedEntry)
+  } catch (cause) {
+    console.error(cause)
+    libraryError.value = `Failed to update ${season.name || `Season ${season.seasonNumber}`} progress.`
+  } finally {
+    setSeasonSaving(season.seasonNumber, false)
+  }
+}
+
+watch(() => [route.params.type, route.params.id], loadMedia, { immediate: true })
 </script>
 
 <template>
@@ -350,45 +478,22 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
             No poster
           </div>
 
-          <section class="mt-3 space-y-2">
+          <section v-if="media.mediaType === 'movie'" class="mt-3 space-y-2">
             <p v-if="libraryLoading" class="text-sm text-gray-500 dark:text-gray-400">Loading library status...</p>
 
-            <template v-else>
-              <label>
-                <span class="sr-only">Status</span>
-                <select
-                  v-model="selectedStatus"
-                  :disabled="savingLibrary"
-                  class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
-                  @change="handleStatusChange"
-                >
-                  <option
-                    v-for="option in statusOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-
-              <div v-if="showTvProgress" class="pt-2">
-                <TvProgressControl
-                  :model-value="watchedEpisodeCount"
-                  :total="totalMainEpisodeCount"
-                  :disabled="savingLibrary"
-                  @commit="updateProgress"
-                />
-              </div>
-
-              <p v-if="libraryError" class="text-sm text-red-600 dark:text-red-400">
-                {{ libraryError }}
-              </p>
-
-              <p v-if="libraryNotice" class="text-sm text-gray-600 dark:text-gray-400">
-                {{ libraryNotice }}
-              </p>
-            </template>
+            <label v-else>
+              <span class="sr-only">Status</span>
+              <select
+                v-model="selectedMovieStatus"
+                :disabled="savingMovie"
+                class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
+                @change="handleMovieStatusChange"
+              >
+                <option v-for="option in MOVIE_STATUS_OPTIONS" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
           </section>
         </div>
 
@@ -417,12 +522,43 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
             </span>
           </div>
 
+          <p v-if="libraryError" class="mt-4 text-sm text-red-600 dark:text-red-400">
+            {{ libraryError }}
+          </p>
+
+          <p v-if="libraryNotice" class="mt-4 text-sm text-gray-600 dark:text-gray-400">
+            {{ libraryNotice }}
+          </p>
+
           <section class="mt-6">
             <h2 class="text-xl font-semibold text-gray-950 dark:text-gray-100">Overview</h2>
 
             <p class="mt-3 max-w-3xl leading-7 text-gray-700 dark:text-gray-300">
               {{ media.overview || 'No overview available.' }}
             </p>
+          </section>
+
+          <section v-if="media.mediaType === 'tv'" class="mt-7">
+            <div class="mb-3 flex items-baseline justify-between gap-3">
+              <h2 class="text-xl font-semibold text-gray-950 dark:text-gray-100">Seasons</h2>
+              <span class="text-sm text-gray-500 dark:text-gray-400">Specials excluded</span>
+            </div>
+
+            <p v-if="libraryLoading" class="text-sm text-gray-500 dark:text-gray-400">Loading season library status...</p>
+
+            <div v-else-if="mainSeasons.length > 0" class="grid gap-2 lg:grid-cols-2">
+              <TvSeasonLibraryControl
+                v-for="season in mainSeasons"
+                :key="season.seasonNumber"
+                :season="season"
+                :entry="tvSeasonEntries.get(season.seasonNumber)"
+                :disabled="legacyMigrationPending || savingSeasons.has(season.seasonNumber)"
+                @status-change="handleSeasonStatusChange"
+                @progress-commit="updateSeasonProgress"
+              />
+            </div>
+
+            <p v-else class="text-sm text-gray-500 dark:text-gray-400">No main seasons are available.</p>
           </section>
         </div>
       </div>

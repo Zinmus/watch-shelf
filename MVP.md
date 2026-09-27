@@ -24,8 +24,9 @@ Statuses:
 
 ## Progress
 
-- Track sequential watched episode count
-- Show watched / total main episode progress
+- Track an independent watched episode count for each main TV season
+- Show watched / total episode progress per season
+- Exclude Season 0 / Specials from the personal-library model
 
 ## Library controls
 

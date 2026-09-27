@@ -1,21 +1,50 @@
-import type { MediaType } from '@/types/media'
-
 export type LibraryStatus = 'planned' | 'watching' | 'completed'
+export type MovieLibraryStatus = Exclude<LibraryStatus, 'watching'>
 
-export interface LibraryEntry {
+interface LibraryEntryBase {
   key: string
-  tmdbId: number
-  mediaType: MediaType
-  title: string
-  posterPath: string | null
-  date: string
-  status: LibraryStatus
-  watchedEpisodeCount?: number
   addedAt: string
   updatedAt: string
 }
 
-export type LibraryEntryInput = Pick<
-  LibraryEntry,
-  'tmdbId' | 'mediaType' | 'title' | 'posterPath' | 'date'
+export interface MovieLibraryEntry extends LibraryEntryBase {
+  mediaType: 'movie'
+  tmdbId: number
+  title: string
+  posterPath: string | null
+  date: string
+  status: MovieLibraryStatus
+}
+
+export interface TvSeasonLibraryEntry extends LibraryEntryBase {
+  mediaType: 'tv'
+  showTmdbId: number
+  seasonNumber: number
+  showTitle: string
+  seasonName?: string
+  status: LibraryStatus
+  watchedEpisodeCount: number
+}
+
+export type LibraryEntry = MovieLibraryEntry | TvSeasonLibraryEntry
+
+export type MovieLibraryEntryInput = Pick<
+  MovieLibraryEntry,
+  'tmdbId' | 'title' | 'posterPath' | 'date'
 >
+
+export type TvSeasonLibraryEntryInput = Pick<
+  TvSeasonLibraryEntry,
+  'showTmdbId' | 'seasonNumber' | 'showTitle' | 'seasonName'
+>
+
+export interface LegacyTvLibraryEntry {
+  showTmdbId: number
+  showTitle: string
+  posterPath: string | null
+  date: string
+  status: LibraryStatus
+  watchedEpisodeCount: number
+  addedAt: string
+  updatedAt: string
+}
