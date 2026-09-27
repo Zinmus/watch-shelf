@@ -37,6 +37,7 @@ function getSeasonLabel(season: SeasonProgress) {
           :total="season.episodeCount"
           :label="getSeasonLabel(season)"
           :active="season.state === 'current'"
+          title-tooltip
           :disabled="disabled || season.episodeCount === 0"
           @commit="emit('commit', season.seasonNumber, $event)"
         />
