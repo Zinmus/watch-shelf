@@ -7,6 +7,9 @@ const props = defineProps<{
   modelValue: number
   total: number
   disabled?: boolean
+  label?: string
+  completed?: boolean
+  active?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -20,6 +23,10 @@ const editInput = ref<HTMLInputElement | null>(null)
 
 const normalizedValue = computed(() =>
   clampWatchedEpisodeCount(props.modelValue, props.total),
+)
+
+const accessibleProgressName = computed(() =>
+  props.label ? `${props.label} watched episode count` : 'watched episode count',
 )
 
 const decrementDisabled = computed(
@@ -90,11 +97,27 @@ watch(normalizedValue, (value) => {
 
 <template>
   <div class="flex w-full items-center justify-between gap-3 text-sm">
-    <span class="text-gray-600 dark:text-gray-400">Episodes</span>
+    <span
+      class="flex min-w-0 items-center gap-1.5 truncate"
+      :class="
+        active || completed
+          ? 'text-gray-800 dark:text-gray-200'
+          : 'text-gray-600 dark:text-gray-400'
+      "
+    >
+      <span
+        v-if="completed"
+        aria-label="Completed"
+        class="text-emerald-600 dark:text-emerald-400"
+      >
+        &#10003;
+      </span>
+      <span class="truncate">{{ label ?? 'Episodes' }}</span>
+    </span>
     <div class="flex items-center gap-1">
       <button
         type="button"
-        aria-label="Decrease watched episode count"
+        :aria-label="`Decrease ${accessibleProgressName}`"
         class="flex size-7 items-center justify-center rounded-md text-base text-gray-600 hover:bg-gray-100 hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
         :disabled="decrementDisabled"
         @click="decrement"
@@ -112,7 +135,7 @@ watch(normalizedValue, (value) => {
             step="1"
             :min="0"
             :max="total"
-            aria-label="Watched episode count"
+            :aria-label="accessibleProgressName"
             class="w-11 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-right text-sm text-gray-950 tabular-nums focus:border-gray-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-gray-400"
             @blur="commitEdit()"
             @keydown.enter.prevent="commitEdit(true)"
@@ -125,8 +148,9 @@ watch(normalizedValue, (value) => {
           v-else
           ref="editButton"
           type="button"
-          aria-label="Edit watched episode count"
+          :aria-label="`Edit ${accessibleProgressName}`"
           class="rounded px-1 py-0.5 tabular-nums hover:bg-gray-100 hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-800 dark:hover:text-white"
+          :class="active ? 'font-medium text-gray-950 dark:text-white' : ''"
           :disabled="disabled"
           @click="startEditing"
         >
@@ -136,7 +160,7 @@ watch(normalizedValue, (value) => {
 
       <button
         type="button"
-        aria-label="Increase watched episode count"
+        :aria-label="`Increase ${accessibleProgressName}`"
         class="flex size-7 items-center justify-center rounded-md text-base text-gray-600 hover:bg-gray-100 hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
         :disabled="incrementDisabled"
         @click="increment"
