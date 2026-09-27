@@ -117,10 +117,7 @@ export function openDatabase(): Promise<IDBDatabase> {
 
               cursor.update({
                 ...cursor.value,
-                status:
-                  entry.status === 'planned' && watchedEpisodeCount > 0
-                    ? 'watching'
-                    : entry.status,
+                status: entry.status,
                 watchedEpisodeCount,
               })
             }

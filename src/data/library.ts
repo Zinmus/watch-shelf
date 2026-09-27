@@ -48,12 +48,9 @@ export async function saveLibraryEntry(
     status,
     ...(input.mediaType === 'tv'
       ? {
-          watchedEpisodeCount:
-            status === 'planned'
-              ? 0
-              : clampStoredEpisodeCount(
-                  watchedEpisodeCount ?? existingEntry?.watchedEpisodeCount ?? 0,
-                ),
+          watchedEpisodeCount: clampStoredEpisodeCount(
+            watchedEpisodeCount ?? existingEntry?.watchedEpisodeCount ?? 0,
+          ),
         }
       : {}),
     addedAt: existingEntry?.addedAt ?? now,
@@ -94,7 +91,7 @@ export async function updateTvLibraryState(
   const entry: LibraryEntry = {
     ...existingEntry,
     status,
-    watchedEpisodeCount: status === 'planned' ? 0 : normalizedCount,
+    watchedEpisodeCount: normalizedCount,
     updatedAt: new Date().toISOString(),
   }
 

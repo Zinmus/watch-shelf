@@ -14,8 +14,9 @@ import {
 } from '@/data/library'
 import { normalizeReleaseStatus } from '@/domain/releaseStatus'
 import {
+  applyTvProgressChange,
+  applyTvStatusSelection,
   canSetTvShowCompleted,
-  clampWatchedEpisodeCount,
   getTotalMainEpisodeCount,
   reconcileTvLibraryState,
 } from '@/domain/tvProgress'
@@ -73,9 +74,7 @@ const tvCanComplete = computed(
 )
 
 const showTvProgress = computed(
-  () =>
-    media.value?.mediaType === 'tv' &&
-    (libraryEntry.value?.status === 'watching' || libraryEntry.value?.status === 'completed'),
+  () => media.value?.mediaType === 'tv' && libraryEntry.value?.mediaType === 'tv',
 )
 
 let loadVersion = 0
@@ -270,16 +269,6 @@ async function handleStatusChange() {
     }
   }
 
-  if (
-    nextStatus === 'planned' &&
-    media.value.mediaType === 'tv' &&
-    watchedEpisodeCount.value > 0 &&
-    !window.confirm('Changing to Planned will reset episode progress to 0. Continue?')
-  ) {
-    selectedStatus.value = previousStatus
-    return
-  }
-
   if (nextStatus === 'completed' && media.value.mediaType === 'tv' && !tvCanComplete.value) {
     libraryError.value = 'A series can only be completed when its episode total is known.'
     selectedStatus.value = previousStatus
@@ -298,22 +287,21 @@ async function handleStatusChange() {
     }
 
     if (media.value.mediaType === 'tv' && libraryEntry.value) {
-      const nextCount =
-        nextStatus === 'planned'
-          ? 0
-          : nextStatus === 'completed'
-            ? totalMainEpisodeCount.value
-            : watchedEpisodeCount.value
+      const nextState = applyTvStatusSelection(
+        nextStatus,
+        watchedEpisodeCount.value,
+        totalMainEpisodeCount.value,
+      )
       libraryEntry.value = await updateTvLibraryState(
         media.value.id,
-        nextStatus,
-        nextCount,
+        nextState.status,
+        nextState.watchedEpisodeCount,
       )
     } else {
-      const initialEpisodeCount =
-        media.value.mediaType === 'tv' && nextStatus === 'completed'
-          ? totalMainEpisodeCount.value
-          : 0
+      const initialEpisodeCount = media.value.mediaType === 'tv'
+        ? applyTvStatusSelection(nextStatus, 0, totalMainEpisodeCount.value)
+            .watchedEpisodeCount
+        : 0
       libraryEntry.value = await saveLibraryEntry(
         getLibraryEntryInput(),
         nextStatus,
@@ -336,16 +324,18 @@ async function updateProgress(requestedCount: number) {
     return
   }
 
-  const nextCount = clampWatchedEpisodeCount(requestedCount, totalMainEpisodeCount.value)
   const previousStatus = libraryEntry.value.status
-  const reconciledState = reconcileTvLibraryState(
+  const nextState = applyTvProgressChange(
     previousStatus,
-    nextCount,
+    watchedEpisodeCount.value,
+    requestedCount,
     totalMainEpisodeCount.value,
   )
-  const nextStatus = reconciledState.status
 
-  if (nextCount === watchedEpisodeCount.value && nextStatus === previousStatus) {
+  if (
+    nextState.watchedEpisodeCount === watchedEpisodeCount.value &&
+    nextState.status === previousStatus
+  ) {
     return
   }
 
@@ -353,11 +343,15 @@ async function updateProgress(requestedCount: number) {
     savingLibrary.value = true
     libraryError.value = null
     libraryNotice.value = null
-    libraryEntry.value = await updateTvLibraryState(media.value.id, nextStatus, nextCount)
-    selectedStatus.value = nextStatus
+    libraryEntry.value = await updateTvLibraryState(
+      media.value.id,
+      nextState.status,
+      nextState.watchedEpisodeCount,
+    )
+    selectedStatus.value = nextState.status
 
-    if (nextStatus !== previousStatus) {
-      libraryNotice.value = `Status changed to ${nextStatus}.`
+    if (nextState.status !== previousStatus) {
+      libraryNotice.value = `Status changed to ${nextState.status}.`
     }
   } catch (cause) {
     console.error(cause)
