@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import MediaCard from '@/components/MediaCard.vue'
+import { getLibraryEntries } from '@/data/library'
 import {
   readDiscoverSession,
   writeDiscoverSession,
@@ -17,6 +18,7 @@ import {
   searchTvShows,
 } from '@/api/tmdb'
 
+import type { LibraryStatus } from '@/types/library'
 import type { DiscoverFilters, DiscoverSort, Genre, MediaItem, MediaType } from '@/types/media'
 
 const savedState = readDiscoverSession()
@@ -26,6 +28,7 @@ const filterType = ref<MediaType | null>(savedState?.filterType ?? null)
 
 const items = ref<MediaItem[]>([])
 const genres = ref<Genre[]>([])
+const libraryStatuses = ref(new Map<string, LibraryStatus>())
 
 const currentPage = ref(1)
 const hasMore = ref(true)
@@ -173,6 +176,17 @@ async function loadGenres() {
   }
 }
 
+async function loadLibraryStatuses() {
+  try {
+    const entries = await getLibraryEntries()
+
+    libraryStatuses.value = new Map(entries.map((entry) => [entry.key, entry.status]))
+  } catch (err) {
+    console.error('Failed to load library statuses:', err)
+    libraryStatuses.value = new Map()
+  }
+}
+
 async function selectType(type: DiscoverTab) {
   if (activeType.value === type) {
     return
@@ -315,8 +329,7 @@ onMounted(async () => {
   document.addEventListener('pointerdown', handleDocumentPointerDown)
   document.addEventListener('keydown', handleKeydown)
 
-  await loadGenres()
-  await loadMedia()
+  await Promise.all([loadGenres(), loadMedia(), loadLibraryStatuses()])
   await nextTick()
 
   setupObserver()
@@ -524,7 +537,12 @@ onBeforeUnmount(() => {
     </p>
 
     <div v-else class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-      <MediaCard v-for="item in items" :key="`${item.mediaType}-${item.id}`" :media="item" />
+      <MediaCard
+        v-for="item in items"
+        :key="`${item.mediaType}-${item.id}`"
+        :media="item"
+        :library-status="libraryStatuses.get(`${item.mediaType}:${item.id}`)"
+      />
     </div>
 
     <p v-if="!loading && !error && items.length === 0" class="py-12 text-center text-gray-500 dark:text-gray-400">
