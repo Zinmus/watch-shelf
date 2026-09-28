@@ -12,9 +12,11 @@ import {
   refreshTvLibraryMetadata,
   removeLibraryEntry,
   saveLibraryEntry,
-  updateTvLibraryState,
+  updateTvLibraryProgress,
+  updateTvLibraryStatus,
 } from '@/data/library'
 import { normalizeReleaseStatus } from '@/domain/releaseStatus'
+import { hasKnownEpisodeTotal } from '@/domain/tvLibraryState'
 import {
   clampWatchedEpisodeCount,
   deriveSeasonProgress,
@@ -58,6 +60,14 @@ const TV_STATUS_OPTIONS: { value: StatusSelection; label: string }[] = [
 const statusOptions = computed(() =>
   media.value?.mediaType === 'movie' ? MOVIE_STATUS_OPTIONS : TV_STATUS_OPTIONS,
 )
+
+function isStatusOptionDisabled(status: StatusSelection) {
+  return (
+    media.value?.mediaType === 'tv' &&
+    status === 'completed' &&
+    !hasKnownEpisodeTotal(totalMainEpisodeCount.value)
+  )
+}
 
 const totalMainEpisodeCount = computed(() =>
   media.value?.mediaType === 'tv' ? getTotalMainEpisodeCount(media.value.seasons) : 0,
@@ -130,7 +140,7 @@ async function refreshTvEpisodeTotal(version: number) {
     return
   }
 
-  if (libraryEntry.value.totalEpisodeCount === totalMainEpisodeCount.value) {
+  if (!hasKnownEpisodeTotal(totalMainEpisodeCount.value)) {
     return
   }
 
@@ -145,6 +155,7 @@ async function refreshTvEpisodeTotal(version: number) {
     }
 
     libraryEntry.value = updatedEntry
+    selectedStatus.value = updatedEntry.status
   } catch (cause) {
     if (version === loadVersion) {
       console.error(cause)
@@ -257,6 +268,38 @@ async function handleStatusChange() {
     return
   }
 
+  if (
+    media.value.mediaType === 'tv' &&
+    nextStatus === 'completed' &&
+    !hasKnownEpisodeTotal(totalMainEpisodeCount.value)
+  ) {
+    libraryNotice.value = 'Completed is unavailable until the episode total is known.'
+    selectedStatus.value = previousStatus
+    return
+  }
+
+  if (media.value.mediaType === 'tv' && nextStatus === 'completed') {
+    if (
+      watchedEpisodeCount.value < totalMainEpisodeCount.value &&
+      !window.confirm(
+        `Mark this series Completed and set watched progress to ${totalMainEpisodeCount.value}/${totalMainEpisodeCount.value}?`,
+      )
+    ) {
+      selectedStatus.value = previousStatus
+      return
+    }
+  } else if (
+    media.value.mediaType === 'tv' &&
+    previousStatus === 'completed' &&
+    (nextStatus === 'planned' || nextStatus === 'watching') &&
+    !window.confirm(
+      `Leave Completed and reset watched progress to 0/${totalMainEpisodeCount.value}?`,
+    )
+  ) {
+    selectedStatus.value = previousStatus
+    return
+  }
+
   if (nextStatus === 'not-in-library') {
     if (!libraryEntry.value) {
       return
@@ -284,11 +327,7 @@ async function handleStatusChange() {
     }
 
     if (media.value.mediaType === 'tv' && libraryEntry.value) {
-      libraryEntry.value = await updateTvLibraryState(
-        media.value.id,
-        nextStatus,
-        watchedEpisodeCount.value,
-      )
+      libraryEntry.value = await updateTvLibraryStatus(media.value.id, nextStatus)
     } else {
       libraryEntry.value = await saveLibraryEntry(
         getLibraryEntryInput(),
@@ -325,11 +364,8 @@ async function updateProgress(requestedCount: number) {
     savingLibrary.value = true
     libraryError.value = null
     libraryNotice.value = null
-    libraryEntry.value = await updateTvLibraryState(
-      media.value.id,
-      libraryEntry.value.status,
-      nextCount,
-    )
+    libraryEntry.value = await updateTvLibraryProgress(media.value.id, nextCount)
+    selectedStatus.value = libraryEntry.value.status
   } catch (cause) {
     console.error(cause)
     libraryError.value = 'Failed to update episode progress.'
@@ -397,6 +433,7 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
                     v-for="option in statusOptions"
                     :key="option.value"
                     :value="option.value"
+                    :disabled="isStatusOptionDisabled(option.value)"
                   >
                     {{ option.label }}
                   </option>

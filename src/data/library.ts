@@ -13,6 +13,12 @@ import {
   requestToPromise,
   transactionToPromise,
 } from '@/data/database'
+import {
+  applyTvProgressChange,
+  applyTvStatusChange,
+  createTvLibraryState,
+  reconcileTvEpisodeTotal,
+} from '@/domain/tvLibraryState'
 
 export async function getLibraryEntry(
   mediaType: MediaType,
@@ -55,21 +61,33 @@ export async function saveLibraryEntry(
     addedAt: existingEntry?.addedAt ?? now,
     updatedAt: now,
   }
-  const entry: LibraryEntry =
-    input.mediaType === 'tv'
-      ? {
-          ...sharedEntry,
-          mediaType: 'tv',
-          watchedEpisodeCount: clampStoredEpisodeCount(
-            watchedEpisodeCount ??
-              (existingEntry?.mediaType === 'tv' ? existingEntry.watchedEpisodeCount : 0),
-          ),
-          totalEpisodeCount: normalizeTotalEpisodeCount(input.totalEpisodeCount),
-        }
-      : {
-          ...sharedEntry,
-          mediaType: 'movie',
-        }
+  let entry: LibraryEntry
+
+  if (input.mediaType === 'tv') {
+    const tvState = createTvLibraryState(
+      status,
+      watchedEpisodeCount ??
+        (existingEntry?.mediaType === 'tv' ? existingEntry.watchedEpisodeCount : 0),
+      input.totalEpisodeCount,
+    )
+
+    if (!tvState) {
+      transaction.abort()
+      await transactionComplete.catch(() => undefined)
+      throw new Error('A TV title cannot be completed without a known episode total.')
+    }
+
+    entry = {
+      ...sharedEntry,
+      ...tvState,
+      mediaType: 'tv',
+    }
+  } else {
+    entry = {
+      ...sharedEntry,
+      mediaType: 'movie',
+    }
+  }
 
   store.put(entry)
   await transactionComplete
@@ -77,23 +95,10 @@ export async function saveLibraryEntry(
   return entry
 }
 
-function clampStoredEpisodeCount(watchedEpisodeCount: number) {
-  return Number.isFinite(watchedEpisodeCount)
-    ? Math.max(0, Math.trunc(watchedEpisodeCount))
-    : 0
-}
-
-function normalizeTotalEpisodeCount(totalEpisodeCount: number) {
-  return Number.isFinite(totalEpisodeCount)
-    ? Math.max(0, Math.trunc(totalEpisodeCount))
-    : 0
-}
-
-export async function updateTvLibraryState(
+async function updateTvLibraryState(
   tmdbId: number,
-  status: LibraryStatus,
-  watchedEpisodeCount: number,
-): Promise<LibraryEntry> {
+  transition: (entry: TvLibraryEntry) => TvLibraryEntry | null,
+): Promise<TvLibraryEntry> {
   const database = await openDatabase()
   const transaction = database.transaction(LIBRARY_STORE, 'readwrite')
   const transactionComplete = transactionToPromise(transaction)
@@ -107,11 +112,16 @@ export async function updateTvLibraryState(
     throw new Error('TV library entry not found.')
   }
 
-  const normalizedCount = clampStoredEpisodeCount(watchedEpisodeCount)
-  const entry: LibraryEntry = {
-    ...existingEntry,
-    status,
-    watchedEpisodeCount: normalizedCount,
+  const nextEntry = transition(existingEntry)
+
+  if (!nextEntry) {
+    transaction.abort()
+    await transactionComplete.catch(() => undefined)
+    throw new Error('This TV library transition is not available.')
+  }
+
+  const entry: TvLibraryEntry = {
+    ...nextEntry,
     updatedAt: new Date().toISOString(),
   }
 
@@ -119,6 +129,20 @@ export async function updateTvLibraryState(
   await transactionComplete
 
   return entry
+}
+
+export function updateTvLibraryStatus(tmdbId: number, status: LibraryStatus) {
+  return updateTvLibraryState(tmdbId, (entry) => {
+    const nextState = applyTvStatusChange(entry, status)
+    return nextState ? { ...entry, ...nextState } : null
+  })
+}
+
+export function updateTvLibraryProgress(tmdbId: number, watchedEpisodeCount: number) {
+  return updateTvLibraryState(tmdbId, (entry) => ({
+    ...entry,
+    ...applyTvProgressChange(entry, watchedEpisodeCount),
+  }))
 }
 
 export async function refreshTvLibraryMetadata(
@@ -137,16 +161,20 @@ export async function refreshTvLibraryMetadata(
     return undefined
   }
 
-  const normalizedTotal = normalizeTotalEpisodeCount(totalEpisodeCount)
+  const nextState = reconcileTvEpisodeTotal(existingEntry, totalEpisodeCount)
 
-  if (existingEntry.totalEpisodeCount === normalizedTotal) {
+  if (
+    existingEntry.status === nextState.status &&
+    existingEntry.watchedEpisodeCount === nextState.watchedEpisodeCount &&
+    existingEntry.totalEpisodeCount === nextState.totalEpisodeCount
+  ) {
     await transactionComplete
     return existingEntry
   }
 
   const entry: TvLibraryEntry = {
     ...existingEntry,
-    totalEpisodeCount: normalizedTotal,
+    ...nextState,
   }
 
   store.put(entry)
