@@ -1,14 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import LibraryRow from '@/components/LibraryRow.vue'
 
-import { getMovie, getTvShow } from '@/api/tmdb'
-import { getLibraryEntries, updateTvLibraryState } from '@/data/library'
-import { normalizeReleaseStatus } from '@/domain/releaseStatus'
-import { clampWatchedEpisodeCount, getTotalMainEpisodeCount } from '@/domain/tvProgress'
+import { getLibraryEntries } from '@/data/library'
 
-import type { ReleaseStatus } from '@/domain/releaseStatus'
 import type { LibraryEntry, LibraryStatus } from '@/types/library'
 import type { MediaType } from '@/types/media'
 
@@ -19,17 +15,6 @@ interface LibrarySection {
   status: LibraryStatus
   title: string
   entries: LibraryEntry[]
-}
-
-interface MediaEnrichment {
-  releaseStatus: ReleaseStatus | null
-  totalEpisodeCount?: number
-}
-
-interface MediaRequest {
-  key: string
-  mediaType: MediaType
-  tmdbId: number
 }
 
 const MEDIA_FILTERS: { value: MediaFilter; label: string }[] = [
@@ -45,22 +30,11 @@ const SECTION_TITLES: Record<LibraryStatus, string> = {
 }
 
 const SECTION_ORDER: LibraryStatus[] = ['watching', 'planned', 'completed']
-const MAX_DETAILS_REQUESTS = 3
-
 const activeType = ref<MediaFilter>('all')
 const sortOrder = ref<SortOrder>('title')
 const entries = ref<LibraryEntry[]>([])
-const totalEpisodeCounts = ref(new Map<number, number>())
-const releaseStatuses = ref(new Map<string, ReleaseStatus>())
-const failedMediaKeys = ref(new Set<string>())
 const loading = ref(true)
 const error = ref<string | null>(null)
-
-const detailsCache = new Map<string, Promise<MediaEnrichment>>()
-const queuedMediaKeys = new Set<string>()
-const detailsRequestQueue: MediaRequest[] = []
-let activeDetailsRequests = 0
-let mounted = true
 
 const hasEntries = computed(() => entries.value.length > 0)
 
@@ -86,139 +60,9 @@ const visibleSections = computed<LibrarySection[]>(() =>
   })).filter((section) => section.entries.length > 0),
 )
 
-const mediaRequests = computed<MediaRequest[]>(() =>
-  entries.value.map((entry) => ({
-    key: entry.key,
-    mediaType: entry.mediaType,
-    tmdbId: entry.tmdbId,
-  })),
-)
-
-function setTotalEpisodeCount(tmdbId: number, count: number) {
-  const nextCounts = new Map(totalEpisodeCounts.value)
-  nextCounts.set(tmdbId, count)
-  totalEpisodeCounts.value = nextCounts
-}
-
-function setReleaseStatus(key: string, status: ReleaseStatus) {
-  const nextStatuses = new Map(releaseStatuses.value)
-  nextStatuses.set(key, status)
-  releaseStatuses.value = nextStatuses
-}
-
-async function normalizeTvEntryProgress(tmdbId: number, totalEpisodeCount: number) {
-  const entry = entries.value.find(
-    (candidate) => candidate.mediaType === 'tv' && candidate.tmdbId === tmdbId,
-  )
-
-  if (!entry || entry.mediaType !== 'tv') {
-    return
-  }
-
-  const normalizedCount = clampWatchedEpisodeCount(
-    entry.watchedEpisodeCount ?? 0,
-    totalEpisodeCount,
-  )
-
-  if (normalizedCount === (entry.watchedEpisodeCount ?? 0)) {
-    return
-  }
-
-  const updatedEntry = await updateTvLibraryState(
-    tmdbId,
-    entry.status,
-    normalizedCount,
-  )
-
-  if (!mounted) {
-    return
-  }
-
-  entries.value = entries.value.map((candidate) =>
-    candidate.key === updatedEntry.key ? updatedEntry : candidate,
-  )
-}
-
-function fetchMediaEnrichment(request: MediaRequest): Promise<MediaEnrichment> {
-  if (request.mediaType === 'movie') {
-    return getMovie(request.tmdbId).then((movie) => ({
-      releaseStatus: normalizeReleaseStatus('movie', movie.status),
-    }))
-  }
-
-  return getTvShow(request.tmdbId).then((show) => ({
-    releaseStatus: normalizeReleaseStatus('tv', show.status),
-    totalEpisodeCount: getTotalMainEpisodeCount(show.seasons),
-  }))
-}
-
-function drainDetailsRequestQueue() {
-  while (
-    mounted &&
-    activeDetailsRequests < MAX_DETAILS_REQUESTS &&
-    detailsRequestQueue.length > 0
-  ) {
-    const mediaRequest = detailsRequestQueue.shift()
-
-    if (!mediaRequest) {
-      return
-    }
-
-    queuedMediaKeys.delete(mediaRequest.key)
-    activeDetailsRequests += 1
-
-    let detailsPromise = detailsCache.get(mediaRequest.key)
-
-    if (!detailsPromise) {
-      detailsPromise = fetchMediaEnrichment(mediaRequest)
-      detailsCache.set(mediaRequest.key, detailsPromise)
-    }
-
-    void detailsPromise
-      .then((enrichment) => {
-        if (!mounted) {
-          return
-        }
-
-        if (enrichment.releaseStatus) {
-          setReleaseStatus(mediaRequest.key, enrichment.releaseStatus)
-        }
-
-        if (enrichment.totalEpisodeCount !== undefined) {
-          setTotalEpisodeCount(mediaRequest.tmdbId, enrichment.totalEpisodeCount)
-          return normalizeTvEntryProgress(mediaRequest.tmdbId, enrichment.totalEpisodeCount)
-        }
-      })
-      .catch((cause: unknown) => {
-        console.error(cause)
-        const nextFailedKeys = new Set(failedMediaKeys.value)
-        nextFailedKeys.add(mediaRequest.key)
-        failedMediaKeys.value = nextFailedKeys
-      })
-      .finally(() => {
-        activeDetailsRequests -= 1
-        drainDetailsRequestQueue()
-      })
-  }
-}
-
-function queueMediaDetails() {
-  mediaRequests.value.forEach((mediaRequest) => {
-    if (detailsCache.has(mediaRequest.key) || queuedMediaKeys.has(mediaRequest.key)) {
-      return
-    }
-
-    queuedMediaKeys.add(mediaRequest.key)
-    detailsRequestQueue.push(mediaRequest)
-  })
-
-  drainDetailsRequestQueue()
-}
-
 async function loadLibrary() {
   loading.value = true
   error.value = null
-  failedMediaKeys.value = new Set()
 
   try {
     entries.value = await getLibraryEntries()
@@ -230,22 +74,13 @@ async function loadLibrary() {
   }
 
   loading.value = false
-  queueMediaDetails()
 }
 
 function resetMediaFilter() {
   activeType.value = 'all'
 }
 
-watch(mediaRequests, queueMediaDetails)
-
 onMounted(loadLibrary)
-
-onBeforeUnmount(() => {
-  mounted = false
-  detailsRequestQueue.length = 0
-  queuedMediaKeys.clear()
-})
 </script>
 
 <template>
@@ -319,13 +154,6 @@ onBeforeUnmount(() => {
             v-for="entry in section.entries"
             :key="entry.key"
             :entry="entry"
-            :release-status="releaseStatuses.get(entry.key)"
-            :total-episode-count="
-              entry.mediaType === 'tv' ? totalEpisodeCounts.get(entry.tmdbId) : undefined
-            "
-            :progress-unavailable="
-              entry.mediaType === 'tv' && failedMediaKeys.has(entry.key)
-            "
           />
         </div>
       </section>

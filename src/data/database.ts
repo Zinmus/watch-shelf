@@ -1,7 +1,7 @@
 import type { MediaType } from '@/types/media'
 
 export const DATABASE_NAME = 'watch-shelf'
-export const DATABASE_VERSION = 3
+export const DATABASE_VERSION = 4
 export const LIBRARY_STORE = 'library'
 
 const LEGACY_WATCHED_EPISODES_STORE = 'watchedEpisodes'
@@ -124,6 +124,41 @@ export function openDatabase(): Promise<IDBDatabase> {
 
             cursor.continue()
           }
+        }
+      }
+
+      if (event.oldVersion < 4 && transaction) {
+        const library = transaction.objectStore(LIBRARY_STORE)
+        const cursorRequest = library.openCursor()
+
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result
+
+          if (!cursor) {
+            return
+          }
+
+          const entry = cursor.value as {
+            mediaType?: string
+            watchedEpisodeCount?: number
+            posterPath?: unknown
+            date?: unknown
+          }
+          const { posterPath: _posterPath, date: _date, ...persistedEntry } = entry
+
+          cursor.update(
+            entry.mediaType === 'tv'
+              ? {
+                  ...persistedEntry,
+                  watchedEpisodeCount:
+                    typeof entry.watchedEpisodeCount === 'number'
+                      ? entry.watchedEpisodeCount
+                      : 0,
+                  totalEpisodeCount: null,
+                }
+              : persistedEntry,
+          )
+          cursor.continue()
         }
       }
     }

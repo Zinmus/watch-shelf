@@ -9,6 +9,7 @@ import TvSeasonProgressList from '@/components/TvSeasonProgressList.vue'
 import { getMovie, getTvShow } from '@/api/tmdb'
 import {
   getLibraryEntry,
+  refreshTvLibraryMetadata,
   removeLibraryEntry,
   saveLibraryEntry,
   updateTvLibraryState,
@@ -21,7 +22,7 @@ import {
   getTotalMainEpisodeCount,
 } from '@/domain/tvProgress'
 
-import type { LibraryEntry, LibraryStatus } from '@/types/library'
+import type { LibraryEntry, LibraryEntryInput, LibraryStatus } from '@/types/library'
 import type { MediaDetails, MediaType } from '@/types/media'
 
 type StatusSelection = LibraryStatus | 'not-in-library'
@@ -62,7 +63,9 @@ const totalMainEpisodeCount = computed(() =>
   media.value?.mediaType === 'tv' ? getTotalMainEpisodeCount(media.value.seasons) : 0,
 )
 
-const watchedEpisodeCount = computed(() => libraryEntry.value?.watchedEpisodeCount ?? 0)
+const watchedEpisodeCount = computed(() =>
+  libraryEntry.value?.mediaType === 'tv' ? libraryEntry.value.watchedEpisodeCount : 0,
+)
 
 const seasonProgress = computed(() =>
   media.value?.mediaType === 'tv'
@@ -101,56 +104,51 @@ function getEntryStatus(): StatusSelection {
   return libraryEntry.value?.status ?? 'not-in-library'
 }
 
-function getLibraryEntryInput() {
+function getLibraryEntryInput(): LibraryEntryInput {
   if (!media.value) {
     throw new Error('Media details are unavailable.')
   }
 
+  if (media.value.mediaType === 'tv') {
+    return {
+      tmdbId: media.value.id,
+      mediaType: 'tv',
+      title: media.value.title,
+      totalEpisodeCount: totalMainEpisodeCount.value,
+    }
+  }
+
   return {
     tmdbId: media.value.id,
-    mediaType: media.value.mediaType,
+    mediaType: 'movie',
     title: media.value.title,
-    posterPath: media.value.posterPath,
-    date: media.value.date,
   }
 }
 
-async function normalizeTvProgress(version: number) {
+async function refreshTvEpisodeTotal(version: number) {
   if (media.value?.mediaType !== 'tv' || libraryEntry.value?.mediaType !== 'tv') {
     return
   }
 
-  const normalizedCount = clampWatchedEpisodeCount(
-    watchedEpisodeCount.value,
-    totalMainEpisodeCount.value,
-  )
-
-  if (normalizedCount === watchedEpisodeCount.value) {
+  if (libraryEntry.value.totalEpisodeCount === totalMainEpisodeCount.value) {
     return
   }
 
   try {
-    savingLibrary.value = true
-    const updatedEntry = await updateTvLibraryState(
+    const updatedEntry = await refreshTvLibraryMetadata(
       media.value.id,
-      libraryEntry.value.status,
-      normalizedCount,
+      totalMainEpisodeCount.value,
     )
 
-    if (version !== loadVersion) {
+    if (version !== loadVersion || !updatedEntry) {
       return
     }
 
     libraryEntry.value = updatedEntry
-    libraryNotice.value = 'Progress was updated to match current series data.'
   } catch (cause) {
     if (version === loadVersion) {
       console.error(cause)
-      libraryError.value = 'Failed to normalize this title\'s episode progress.'
-    }
-  } finally {
-    if (version === loadVersion) {
-      savingLibrary.value = false
+      libraryError.value = 'Failed to refresh this title\'s episode total.'
     }
   }
 }
@@ -242,7 +240,7 @@ async function loadMedia() {
     if (type === 'movie') {
       await reconcileMovieState(version)
     } else {
-      await normalizeTvProgress(version)
+      await refreshTvEpisodeTotal(version)
     }
   }
 }

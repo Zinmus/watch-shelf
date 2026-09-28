@@ -1,16 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import ReleaseStatusBadge from '@/components/ReleaseStatusBadge.vue'
-
 import type { LibraryEntry } from '@/types/library'
-import type { ReleaseStatus } from '@/domain/releaseStatus'
 
 const props = defineProps<{
   entry: LibraryEntry
-  releaseStatus?: ReleaseStatus
-  totalEpisodeCount?: number
-  progressUnavailable?: boolean
 }>()
 
 const progressLabel = computed(() => {
@@ -18,19 +12,11 @@ const progressLabel = computed(() => {
     return null
   }
 
-  if (props.progressUnavailable) {
-    return `${props.entry.watchedEpisodeCount ?? 0} watched`
+  if (props.entry.totalEpisodeCount === null) {
+    return `${props.entry.watchedEpisodeCount} watched`
   }
 
-  if (props.totalEpisodeCount !== undefined && props.totalEpisodeCount > 0) {
-    return `${Math.min(props.entry.watchedEpisodeCount ?? 0, props.totalEpisodeCount)} / ${props.totalEpisodeCount}`
-  }
-
-  if (props.totalEpisodeCount === 0) {
-    return '0 / 0'
-  }
-
-  return 'Loading progress…'
+  return `${props.entry.watchedEpisodeCount} / ${props.entry.totalEpisodeCount}`
 })
 
 </script>
@@ -42,13 +28,9 @@ const progressLabel = computed(() => {
     class="group grid min-h-12 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors hover:bg-gray-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-black dark:hover:bg-gray-800/70 dark:focus-visible:outline-gray-300 sm:grid-cols-[minmax(0,1fr)_minmax(8rem,auto)_auto]"
   >
     <div class="min-w-0">
-      <div class="flex flex-wrap items-center gap-2">
-        <h3 class="truncate font-medium leading-5 text-gray-950 group-hover:underline dark:text-gray-100">
-          {{ entry.title }}
-        </h3>
-
-        <ReleaseStatusBadge v-if="releaseStatus" :status="releaseStatus" />
-      </div>
+      <h3 class="truncate font-medium leading-5 text-gray-950 group-hover:underline dark:text-gray-100">
+        {{ entry.title }}
+      </h3>
     </div>
 
     <p

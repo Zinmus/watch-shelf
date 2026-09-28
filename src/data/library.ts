@@ -1,4 +1,9 @@
-import type { LibraryEntry, LibraryEntryInput, LibraryStatus } from '@/types/library'
+import type {
+  LibraryEntry,
+  LibraryEntryInput,
+  LibraryStatus,
+  TvLibraryEntry,
+} from '@/types/library'
 import type { MediaType } from '@/types/media'
 
 import {
@@ -42,20 +47,29 @@ export async function saveLibraryEntry(
   const key = createLibraryEntryKey(input.mediaType, input.tmdbId)
   const existingEntry = await requestToPromise<LibraryEntry | undefined>(store.get(key))
   const now = new Date().toISOString()
-  const entry: LibraryEntry = {
-    ...input,
+  const sharedEntry = {
     key,
+    tmdbId: input.tmdbId,
+    title: input.title,
     status,
-    ...(input.mediaType === 'tv'
-      ? {
-          watchedEpisodeCount: clampStoredEpisodeCount(
-            watchedEpisodeCount ?? existingEntry?.watchedEpisodeCount ?? 0,
-          ),
-        }
-      : {}),
     addedAt: existingEntry?.addedAt ?? now,
     updatedAt: now,
   }
+  const entry: LibraryEntry =
+    input.mediaType === 'tv'
+      ? {
+          ...sharedEntry,
+          mediaType: 'tv',
+          watchedEpisodeCount: clampStoredEpisodeCount(
+            watchedEpisodeCount ??
+              (existingEntry?.mediaType === 'tv' ? existingEntry.watchedEpisodeCount : 0),
+          ),
+          totalEpisodeCount: normalizeTotalEpisodeCount(input.totalEpisodeCount),
+        }
+      : {
+          ...sharedEntry,
+          mediaType: 'movie',
+        }
 
   store.put(entry)
   await transactionComplete
@@ -66,6 +80,12 @@ export async function saveLibraryEntry(
 function clampStoredEpisodeCount(watchedEpisodeCount: number) {
   return Number.isFinite(watchedEpisodeCount)
     ? Math.max(0, Math.trunc(watchedEpisodeCount))
+    : 0
+}
+
+function normalizeTotalEpisodeCount(totalEpisodeCount: number) {
+  return Number.isFinite(totalEpisodeCount)
+    ? Math.max(0, Math.trunc(totalEpisodeCount))
     : 0
 }
 
@@ -93,6 +113,40 @@ export async function updateTvLibraryState(
     status,
     watchedEpisodeCount: normalizedCount,
     updatedAt: new Date().toISOString(),
+  }
+
+  store.put(entry)
+  await transactionComplete
+
+  return entry
+}
+
+export async function refreshTvLibraryMetadata(
+  tmdbId: number,
+  totalEpisodeCount: number,
+): Promise<TvLibraryEntry | undefined> {
+  const database = await openDatabase()
+  const transaction = database.transaction(LIBRARY_STORE, 'readwrite')
+  const transactionComplete = transactionToPromise(transaction)
+  const store = transaction.objectStore(LIBRARY_STORE)
+  const key = createLibraryEntryKey('tv', tmdbId)
+  const existingEntry = await requestToPromise<LibraryEntry | undefined>(store.get(key))
+
+  if (!existingEntry || existingEntry.mediaType !== 'tv') {
+    await transactionComplete
+    return undefined
+  }
+
+  const normalizedTotal = normalizeTotalEpisodeCount(totalEpisodeCount)
+
+  if (existingEntry.totalEpisodeCount === normalizedTotal) {
+    await transactionComplete
+    return existingEntry
+  }
+
+  const entry: TvLibraryEntry = {
+    ...existingEntry,
+    totalEpisodeCount: normalizedTotal,
   }
 
   store.put(entry)
