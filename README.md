@@ -13,10 +13,10 @@ WatchShelf is a personal movie and TV tracking application built with Vue. It co
 - Filter catalog results by genre and year, then sort by popularity, rating, or release date.
 - Continue browsing through infinite scrolling while stale requests are safely ignored when the active view changes.
 - View title details, including artwork, overview, genres, release year, media type, and release status.
-- Organize a personal library into Planned, Watching, and Completed sections. Movies use Planned and Completed; Watching and episode progress apply to TV series.
+- Organize a personal library into Planned, Watching, and Completed sections. Movies use Planned and Completed; TV series use all three statuses.
 - Filter the library by media type, sort it by title or most recent update, and scan titles in a compact row layout.
-- Track TV progress as a watched episode count, with increment, decrement, and direct-edit controls.
-- Reconcile TV progress and library status when TMDB's current episode total changes.
+- Track TV progress across a series and its seasons with increment, decrement, and direct-edit controls.
+- Keep TV completion and watched progress consistent as progress or TMDB's episode total changes.
 - Show normalized TMDB release-status badges independently of the user's library status.
 - Restore the active Discover tab, filters, sort order, and search state within the browser session.
 - Switch between light and dark themes, with the saved preference taking priority over the system color scheme.
@@ -56,7 +56,13 @@ The frontend calls only WatchShelf's own API routes. `TMDB_ACCESS_TOKEN` is read
 
 ### TV progress model
 
-WatchShelf stores one sequential watched episode count per series. The total is derived from TMDB's season summaries, excluding Season 0 (Specials), and saved as a local snapshot when details are loaded. Library status and episode progress are independent: refreshing the total does not modify either one.
+Each TV show is one Library entry with a single sequential `watchedEpisodeCount`. Its `totalEpisodeCount` is stored in IndexedDB as a TMDB metadata snapshot, so Library can display `watched / total` without fetching TMDB whenever it opens. Media Details refreshes that snapshot when fresh TMDB metadata is available.
+
+Season progress on Details is derived from the same show-level count, and every season control updates that global sequential progress. Season 0 (Specials) is excluded.
+
+For TV, Completed requires a known positive total and means `watchedEpisodeCount === totalEpisodeCount`. Reaching the total automatically marks the show Completed; reducing progress from Completed moves it to Planned. Selecting Completed asks for confirmation and fills progress to the total. Changing from Completed to Planned or Watching also asks for confirmation and resets progress to zero.
+
+Planned and Watching can otherwise hold any progress below the total, and switching between them preserves progress. If TMDB adds episodes to a previously Completed show, it becomes Planned while retaining its earlier watched count. An unknown total never implies completion.
 
 ## Getting Started
 
@@ -131,8 +137,9 @@ The Vite frontend and serverless API are designed to deploy together on Vercel. 
 ## Project Decisions
 
 - **Local-first persistence:** IndexedDB provides durable personal-library storage without authentication, a user service, or a database backend.
-- **Separate status concepts:** Planned, Watching, and Completed describe the user's relationship with a title; release badges describe TMDB's current production or release state.
-- **Sequential TV progress:** A single watched count keeps progress editing and reconciliation simple while avoiding a larger per-episode data model.
+- **Separate status concepts:** Library statuses describe the user's relationship with a title; TMDB release badges describe its production or release state. Movies use Planned and Completed, while TV uses Planned, Watching, and Completed.
+- **Sequential TV progress:** One Library entry and one watched count per show support overall and derived season progress without a per-episode data model.
+- **Single media provider:** TMDB is the only external source for discovery and media metadata; IndexedDB holds the local personal library and cached TV totals.
 - **Server-side credentials:** A narrow Vercel API layer keeps the TMDB token out of the browser and centralizes validation, caching, timeouts, and safe error handling.
 - **Scoped browser state:** Discover controls use `sessionStorage`, theme preference uses `localStorage`, and library records use IndexedDB—each matching the intended lifetime and data shape.
 - **Composition over global state:** Focused composables, domain modules, and data-access functions provide shared behavior without an additional state-management dependency.
