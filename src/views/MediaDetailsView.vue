@@ -449,7 +449,7 @@ watch(() => [route.params.type, route.params.id], loadMedia, {
                 />
 
                 <TvSeasonProgressList
-                  v-if="seasonProgress.length > 0"
+                  v-if="seasonProgress.length > 1"
                   :seasons="seasonProgress"
                   :disabled="savingLibrary"
                   @commit="updateSeasonProgress"
