@@ -23,6 +23,7 @@ import {
   getGlobalProgressForSeason,
   getTotalMainEpisodeCount,
 } from '@/domain/tvProgress'
+import { setMediaDocumentTitle } from '@/router/documentTitle'
 
 import type { LibraryEntry, LibraryEntryInput, LibraryStatus } from '@/types/library'
 import type { MediaDetails, MediaType } from '@/types/media'
@@ -228,6 +229,14 @@ async function loadMedia() {
 
   if (detailsResult.status === 'fulfilled') {
     media.value = detailsResult.value
+
+    if (
+      route.name === 'media-details' &&
+      String(route.params.type) === type &&
+      Number(route.params.id) === id
+    ) {
+      setMediaDocumentTitle(detailsResult.value.title, detailsResult.value.mediaType)
+    }
   } else {
     console.error(detailsResult.reason)
     error.value = 'Failed to load media details.'
