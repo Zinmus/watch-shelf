@@ -9,5 +9,5 @@ export function setDocumentTitle(title = DEFAULT_DOCUMENT_TITLE) {
 export function setMediaDocumentTitle(title: string, mediaType: MediaType) {
   const mediaLabel = mediaType === 'movie' ? 'Movie' : 'Series'
 
-  setDocumentTitle(`${title} / ${mediaLabel} / ${DEFAULT_DOCUMENT_TITLE}`)
+  setDocumentTitle(`${title} / ${mediaLabel}`)
 }

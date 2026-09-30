@@ -25,7 +25,7 @@ const router = createRouter({
       path: '/library',
       name: 'library',
       component: LibraryView,
-      meta: { title: `Library / ${DEFAULT_DOCUMENT_TITLE}` },
+      meta: { title: 'Library' },
     },
     {
       path: '/title/:type/:id',
